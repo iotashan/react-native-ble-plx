@@ -316,11 +316,16 @@ export class BleManager {
 
     if (emitCurrentState) {
       var cancelled = false
-      this._callPromise(this.state()).then(currentState => {
-        if (!cancelled) {
-          listener(currentState)
+      this._callPromise(this.state()).then(
+        currentState => {
+          if (!cancelled) {
+            listener(currentState)
+          }
+        },
+        () => {
+          // Prevent unhandled promise rejection for internal state fetch.
         }
-      })
+      )
 
       wrappedSubscription = {
         remove: () => {
