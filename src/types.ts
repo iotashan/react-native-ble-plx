@@ -6,9 +6,9 @@ export const State = {
   Unsupported: 'Unsupported',
   Unauthorized: 'Unauthorized',
   PoweredOff: 'PoweredOff',
-  PoweredOn: 'PoweredOn',
-} as const;
-export type State = typeof State[keyof typeof State];
+  PoweredOn: 'PoweredOn'
+} as const
+export type State = (typeof State)[keyof typeof State]
 
 export const LogLevel = {
   None: 'None',
@@ -16,36 +16,36 @@ export const LogLevel = {
   Debug: 'Debug',
   Info: 'Info',
   Warning: 'Warning',
-  Error: 'Error',
-} as const;
-export type LogLevel = typeof LogLevel[keyof typeof LogLevel];
+  Error: 'Error'
+} as const
+export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel]
 
 export const ConnectionPriority = {
   Balanced: 0,
   High: 1,
-  LowPower: 2,
-} as const;
-export type ConnectionPriority = typeof ConnectionPriority[keyof typeof ConnectionPriority];
+  LowPower: 2
+} as const
+export type ConnectionPriority = (typeof ConnectionPriority)[keyof typeof ConnectionPriority]
 
 export const ConnectionState = {
   Disconnected: 'disconnected',
   Connecting: 'connecting',
   Connected: 'connected',
-  Disconnecting: 'disconnecting',
-} as const;
-export type ConnectionState = typeof ConnectionState[keyof typeof ConnectionState];
+  Disconnecting: 'disconnecting'
+} as const
+export type ConnectionState = (typeof ConnectionState)[keyof typeof ConnectionState]
 
 export interface ScanOptions {
-  scanMode?: number;
-  callbackType?: number;
-  legacyScan?: boolean;
-  allowDuplicates?: boolean;
+  scanMode?: number
+  callbackType?: number
+  legacyScan?: boolean
+  allowDuplicates?: boolean
 }
 
 export interface ConnectOptions {
-  autoConnect?: boolean;
-  timeout?: number;
-  retries?: number;
-  retryDelay?: number;
-  requestMtu?: number;
+  autoConnect?: boolean
+  timeout?: number
+  retries?: number
+  retryDelay?: number
+  requestMtu?: number
 }

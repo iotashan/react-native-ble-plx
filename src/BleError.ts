@@ -30,49 +30,49 @@ export const BleErrorCode = {
   PhyNegotiationFailed: 700,
   ScanFailed: 800,
   ScanThrottled: 801,
-  UnknownError: 999,
-} as const;
-export type BleErrorCode = typeof BleErrorCode[keyof typeof BleErrorCode];
+  UnknownError: 999
+} as const
+export type BleErrorCode = (typeof BleErrorCode)[keyof typeof BleErrorCode]
 
 export class BleError extends Error {
-  readonly code: BleErrorCode;
-  readonly isRetryable: boolean;
-  readonly deviceId?: string;
-  readonly serviceUUID?: string;
-  readonly characteristicUUID?: string;
-  readonly operation?: string;
-  readonly platform: 'android' | 'ios';
-  readonly nativeDomain?: string;
-  readonly nativeCode?: number;
-  readonly gattStatus?: number;
-  readonly attErrorCode?: number;
+  readonly code: BleErrorCode
+  readonly isRetryable: boolean
+  readonly deviceId?: string
+  readonly serviceUUID?: string
+  readonly characteristicUUID?: string
+  readonly operation?: string
+  readonly platform: 'android' | 'ios'
+  readonly nativeDomain?: string
+  readonly nativeCode?: number
+  readonly gattStatus?: number
+  readonly attErrorCode?: number
 
   constructor(errorInfo: {
-    code: number;
-    message: string;
-    isRetryable: boolean;
-    platform: string;
-    deviceId?: string | null;
-    serviceUuid?: string | null;
-    characteristicUuid?: string | null;
-    operation?: string | null;
-    nativeDomain?: string | null;
-    nativeCode?: number | null;
-    gattStatus?: number | null;
-    attErrorCode?: number | null;
+    code: number
+    message: string
+    isRetryable: boolean
+    platform: string
+    deviceId?: string | null
+    serviceUuid?: string | null
+    characteristicUuid?: string | null
+    operation?: string | null
+    nativeDomain?: string | null
+    nativeCode?: number | null
+    gattStatus?: number | null
+    attErrorCode?: number | null
   }) {
-    super(errorInfo.message);
-    this.name = 'BleError';
-    this.code = errorInfo.code as BleErrorCode;
-    this.isRetryable = errorInfo.isRetryable;
-    this.platform = errorInfo.platform as 'android' | 'ios';
-    this.deviceId = errorInfo.deviceId ?? undefined;
-    this.serviceUUID = errorInfo.serviceUuid ?? undefined;
-    this.characteristicUUID = errorInfo.characteristicUuid ?? undefined;
-    this.operation = errorInfo.operation ?? undefined;
-    this.nativeDomain = errorInfo.nativeDomain ?? undefined;
-    this.nativeCode = errorInfo.nativeCode ?? undefined;
-    this.gattStatus = errorInfo.gattStatus ?? undefined;
-    this.attErrorCode = errorInfo.attErrorCode ?? undefined;
+    super(errorInfo.message)
+    this.name = 'BleError'
+    this.code = errorInfo.code as BleErrorCode
+    this.isRetryable = errorInfo.isRetryable
+    this.platform = errorInfo.platform as 'android' | 'ios'
+    this.deviceId = errorInfo.deviceId ?? undefined
+    this.serviceUUID = errorInfo.serviceUuid ?? undefined
+    this.characteristicUUID = errorInfo.characteristicUuid ?? undefined
+    this.operation = errorInfo.operation ?? undefined
+    this.nativeDomain = errorInfo.nativeDomain ?? undefined
+    this.nativeCode = errorInfo.nativeCode ?? undefined
+    this.gattStatus = errorInfo.gattStatus ?? undefined
+    this.attErrorCode = errorInfo.attErrorCode ?? undefined
   }
 }

@@ -1,42 +1,42 @@
-import { EventBatcher } from '../src/EventBatcher';
+import { EventBatcher } from '../src/EventBatcher'
 
 test('immediate mode delivers events without delay', () => {
-  const received: number[] = [];
-  const batcher = new EventBatcher<number>(0, 50, (batch) => {
-    received.push(...batch);
-  });
-  batcher.push(1);
-  batcher.push(2);
-  expect(received).toEqual([1, 2]);
-  batcher.dispose();
-});
+  const received: number[] = []
+  const batcher = new EventBatcher<number>(0, 50, batch => {
+    received.push(...batch)
+  })
+  batcher.push(1)
+  batcher.push(2)
+  expect(received).toEqual([1, 2])
+  batcher.dispose()
+})
 
-test('batched mode collects events and delivers on interval', (done) => {
-  const received: number[][] = [];
-  const batcher = new EventBatcher<number>(50, 50, (batch) => {
-    received.push([...batch]);
+test('batched mode collects events and delivers on interval', done => {
+  const received: number[][] = []
+  const batcher = new EventBatcher<number>(50, 50, batch => {
+    received.push([...batch])
     if (received.length === 1) {
-      expect(received[0]).toEqual([1, 2, 3]);
-      batcher.dispose();
-      done();
+      expect(received[0]!).toEqual([1, 2, 3])
+      batcher.dispose()
+      done()
     }
-  });
-  batcher.push(1);
-  batcher.push(2);
-  batcher.push(3);
+  })
+  batcher.push(1)
+  batcher.push(2)
+  batcher.push(3)
   // Events should not be delivered yet
-  expect(received).toEqual([]);
-});
+  expect(received).toEqual([])
+})
 
-test('max batch size caps delivery', (done) => {
-  const received: number[][] = [];
-  const batcher = new EventBatcher<number>(50, 3, (batch) => {
-    received.push([...batch]);
+test('max batch size caps delivery', done => {
+  const received: number[][] = []
+  const batcher = new EventBatcher<number>(50, 3, batch => {
+    received.push([...batch])
     if (received.length === 1) {
-      expect(received[0].length).toBeLessThanOrEqual(3);
-      batcher.dispose();
-      done();
+      expect(received[0]!.length).toBeLessThanOrEqual(3)
+      batcher.dispose()
+      done()
     }
-  });
-  for (let i = 0; i < 10; i++) batcher.push(i);
-});
+  })
+  for (let i = 0; i < 10; i += 1) batcher.push(i)
+})

@@ -8,7 +8,7 @@
   },
   "overrides": [
     {
-      "files": ["src/**", "__tests__/**", "integration-tests/**"],
+      "files": ["src/**/*.js", "src/**/*.jsx", "__tests__/**/*.js", "__tests__/**/*.jsx", "integration-tests/**/*.js", "integration-tests/**/*.jsx"],
       "parser": "hermes-eslint",
       "extends": [
         "plugin:react/recommended",
@@ -37,7 +37,7 @@
       }
     },
     {
-      "files": ["*.tsx", "*.ts", "*.d.ts"],
+      "files": ["src/**/*.tsx", "src/**/*.ts", "src/**/*.d.ts", "__tests__/**/*.ts", "__tests__/**/*.tsx", "plugin/**/*.ts", "plugin/**/*.tsx"],
       "parser": "@typescript-eslint/parser",
       "extends": [
         "eslint:recommended",
@@ -77,7 +77,10 @@
             "varsIgnorePattern": "^_",
             "caughtErrorsIgnorePattern": "^_"
           }
-        ]
+        ],
+        "@typescript-eslint/no-redeclare": "off",
+        "lines-between-class-members": "off",
+        "@typescript-eslint/lines-between-class-members": "off"
       },
       "env": {
         "es2020": true
@@ -88,6 +91,18 @@
       "rules": {
         "max-classes-per-file": "off",
         "prettier/prettier": "off"
+      }
+    },
+    {
+      "files": ["src/specs/**"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["__tests__/**/*.ts", "__tests__/**/*.tsx"],
+      "rules": {
+        "@typescript-eslint/no-non-null-assertion": "off"
       }
     },
     {
