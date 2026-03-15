@@ -1,0 +1,468 @@
+import { TurboModuleRegistry } from 'react-native'
+import type { EventSubscription, TurboModule } from 'react-native'
+import type { State, ScanOptions, ConnectOptions, ConnectionPriority } from './types'
+import { BleError } from './BleError'
+import { EventBatcher } from './EventBatcher'
+
+// ---------------------------------------------------------------------------
+// Native module types (mirrored from specs/NativeBlePlx.ts since specs/ is
+// excluded from tsconfig)
+// ---------------------------------------------------------------------------
+
+type NativeEventEmitter<T> = (handler: (arg: T) => void | Promise<void>) => EventSubscription
+
+interface DeviceInfo {
+  readonly id: string
+  readonly name: string | null
+  readonly rssi: number
+  readonly mtu: number
+  readonly isConnectable: boolean | null
+  readonly serviceUuids: readonly string[]
+  readonly manufacturerData: string | null
+}
+
+interface CharacteristicInfo {
+  readonly deviceId: string
+  readonly serviceUuid: string
+  readonly uuid: string
+  readonly value: string | null
+  readonly isNotifying: boolean
+  readonly isIndicatable: boolean
+  readonly isReadable: boolean
+  readonly isWritableWithResponse: boolean
+  readonly isWritableWithoutResponse: boolean
+}
+
+interface ScanResult {
+  readonly id: string
+  readonly name: string | null
+  readonly rssi: number
+  readonly serviceUuids: readonly string[]
+  readonly manufacturerData: string | null
+}
+
+interface ConnectionStateEvent {
+  readonly deviceId: string
+  readonly state: string
+  readonly errorCode: number | null
+  readonly errorMessage: string | null
+}
+
+interface CharacteristicValueEvent {
+  readonly deviceId: string
+  readonly serviceUuid: string
+  readonly characteristicUuid: string
+  readonly value: string
+  readonly transactionId: string | null
+}
+
+interface StateChangeEvent {
+  readonly state: string
+}
+
+interface BleErrorInfo {
+  readonly code: number
+  readonly message: string
+  readonly isRetryable: boolean
+  readonly deviceId: string | null
+  readonly serviceUuid: string | null
+  readonly characteristicUuid: string | null
+  readonly operation: string | null
+  readonly platform: string
+  readonly nativeDomain: string | null
+  readonly nativeCode: number | null
+  readonly gattStatus: number | null
+  readonly attErrorCode: number | null
+}
+
+interface NativeBlePlxSpec extends TurboModule {
+  createClient(restoreStateIdentifier: string | null): Promise<void>
+  destroyClient(): Promise<void>
+  state(): Promise<string>
+  startDeviceScan(
+    uuids: readonly string[] | null,
+    options: Readonly<{
+      scanMode?: number
+      callbackType?: number
+      legacyScan?: boolean
+      allowDuplicates?: boolean
+    }> | null
+  ): void
+  stopDeviceScan(): Promise<void>
+  connectToDevice(
+    deviceId: string,
+    options: Readonly<{
+      autoConnect?: boolean
+      timeout?: number
+      retries?: number
+      retryDelay?: number
+      requestMtu?: number
+    }> | null
+  ): Promise<DeviceInfo>
+  cancelDeviceConnection(deviceId: string): Promise<DeviceInfo>
+  isDeviceConnected(deviceId: string): Promise<boolean>
+  discoverAllServicesAndCharacteristics(deviceId: string, transactionId: string | null): Promise<DeviceInfo>
+  readCharacteristic(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    transactionId: string | null
+  ): Promise<CharacteristicInfo>
+  writeCharacteristic(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    value: string,
+    withResponse: boolean,
+    transactionId: string | null
+  ): Promise<CharacteristicInfo>
+  monitorCharacteristic(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    subscriptionType: string | null,
+    transactionId: string | null
+  ): void
+  requestMtu(deviceId: string, mtu: number, transactionId: string | null): Promise<DeviceInfo>
+  requestConnectionPriority(deviceId: string, priority: number): Promise<DeviceInfo>
+  cancelTransaction(transactionId: string): Promise<void>
+
+  readonly onScanResult: NativeEventEmitter<ScanResult>
+  readonly onConnectionStateChange: NativeEventEmitter<ConnectionStateEvent>
+  readonly onCharacteristicValueUpdate: NativeEventEmitter<CharacteristicValueEvent>
+  readonly onStateChange: NativeEventEmitter<StateChangeEvent>
+  readonly onError: NativeEventEmitter<BleErrorInfo>
+}
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export type { DeviceInfo, CharacteristicInfo, ScanResult, ConnectionStateEvent, CharacteristicValueEvent }
+
+export interface Subscription {
+  remove(): void
+}
+
+export interface MonitorOptions {
+  transactionId?: string
+  batchInterval?: number
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let transactionCounter = 0
+function nextTransactionId(): string {
+  transactionCounter += 1
+  return `__ble_tx_${transactionCounter}`
+}
+
+function getNativeModule(): NativeBlePlxSpec {
+  const mod = TurboModuleRegistry.get<NativeBlePlxSpec>('NativeBlePlx')
+  if (!mod) {
+    throw new Error(
+      'react-native-ble-plx: NativeBlePlx TurboModule not found. Make sure the native module is linked correctly.'
+    )
+  }
+  return mod
+}
+
+// ---------------------------------------------------------------------------
+// BleManager
+// ---------------------------------------------------------------------------
+
+export class BleManager {
+  private nativeModule: NativeBlePlxSpec
+  private scanBatcher: EventBatcher<ScanResult> | null = null
+  private scanSubscription: EventSubscription | null = null
+  private errorSubscription: EventSubscription | null = null
+  private monitorBatchers = new Map<string, EventBatcher<CharacteristicValueEvent>>()
+  private monitorSubscriptions = new Map<string, EventSubscription>()
+  private activeTransactionIds = new Set<string>()
+
+  constructor() {
+    this.nativeModule = getNativeModule()
+  }
+
+  // -----------------------------------------------------------------------
+  // Lifecycle
+  // -----------------------------------------------------------------------
+
+  async createClient(restoreStateIdentifier: string | null = null): Promise<void> {
+    await this.nativeModule.createClient(restoreStateIdentifier)
+
+    // Subscribe to native error events globally
+    this.errorSubscription = this.nativeModule.onError(_info => {
+      // Errors are routed through individual operation promises on the native side.
+      // This listener is kept so consumers can add a global handler in the future.
+    })
+  }
+
+  async destroyClient(): Promise<void> {
+    // Dispose scan batcher & subscription
+    this.scanBatcher?.dispose()
+    this.scanBatcher = null
+    this.scanSubscription?.remove()
+    this.scanSubscription = null
+
+    // Dispose all monitor batchers & subscriptions
+    this.monitorBatchers.forEach(batcher => batcher.dispose())
+    this.monitorBatchers.clear()
+
+    this.monitorSubscriptions.forEach(sub => sub.remove())
+    this.monitorSubscriptions.clear()
+
+    // Cancel all active transactions
+    const cancelPromises = [...this.activeTransactionIds].map(txId =>
+      this.nativeModule.cancelTransaction(txId).catch(() => {
+        // Best-effort cancellation — ignore errors from already-completed transactions
+      })
+    )
+    await Promise.all(cancelPromises)
+    this.activeTransactionIds.clear()
+
+    // Remove global error listener
+    this.errorSubscription?.remove()
+    this.errorSubscription = null
+
+    await this.nativeModule.destroyClient()
+  }
+
+  // -----------------------------------------------------------------------
+  // State
+  // -----------------------------------------------------------------------
+
+  async state(): Promise<State> {
+    const rawState = await this.nativeModule.state()
+    return rawState as State
+  }
+
+  onStateChange(callback: (state: State) => void, emitCurrentState?: boolean): Subscription {
+    const sub = this.nativeModule.onStateChange(event => {
+      callback(event.state as State)
+    })
+
+    if (emitCurrentState) {
+      this.nativeModule.state().then(
+        s => callback(s as State),
+        () => {
+          // Ignore errors when reading initial state
+        }
+      )
+    }
+
+    return {
+      remove: () => {
+        sub.remove()
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Scanning
+  // -----------------------------------------------------------------------
+
+  startDeviceScan(
+    serviceUuids: string[] | null,
+    options: ScanOptions | null,
+    callback: (error: BleError | null, scannedDevice: ScanResult | null) => void
+  ): void {
+    // Clean up any previous scan
+    this.stopScanInternal()
+
+    // Create batcher for scan results (100ms interval, max 50 per batch)
+    this.scanBatcher = new EventBatcher<ScanResult>(100, 50, batch => {
+      batch.forEach(result => callback(null, result))
+    })
+
+    // Listen to native scan events
+    this.scanSubscription = this.nativeModule.onScanResult(result => {
+      this.scanBatcher?.push(result)
+    })
+
+    // Start native scan (synchronous — errors come via onError)
+    this.nativeModule.startDeviceScan(serviceUuids, options ?? null)
+  }
+
+  async stopDeviceScan(): Promise<void> {
+    this.stopScanInternal()
+    await this.nativeModule.stopDeviceScan()
+  }
+
+  private stopScanInternal(): void {
+    this.scanBatcher?.dispose()
+    this.scanBatcher = null
+    this.scanSubscription?.remove()
+    this.scanSubscription = null
+  }
+
+  // -----------------------------------------------------------------------
+  // Connection
+  // -----------------------------------------------------------------------
+
+  async connectToDevice(deviceId: string, options?: ConnectOptions | null): Promise<DeviceInfo> {
+    return this.nativeModule.connectToDevice(deviceId, options ?? null)
+  }
+
+  async cancelDeviceConnection(deviceId: string): Promise<DeviceInfo> {
+    return this.nativeModule.cancelDeviceConnection(deviceId)
+  }
+
+  async isDeviceConnected(deviceId: string): Promise<boolean> {
+    return this.nativeModule.isDeviceConnected(deviceId)
+  }
+
+  onDeviceDisconnected(
+    deviceId: string,
+    callback: (error: BleError | null, device: ConnectionStateEvent | null) => void
+  ): Subscription {
+    const sub = this.nativeModule.onConnectionStateChange(event => {
+      if (event.deviceId !== deviceId) return
+      if (event.state !== 'disconnected') return
+
+      if (event.errorCode != null && event.errorMessage != null) {
+        const bleError = new BleError({
+          code: event.errorCode,
+          message: event.errorMessage,
+          isRetryable: false,
+          platform: 'ios',
+          deviceId: event.deviceId
+        })
+        callback(bleError, event)
+      } else {
+        callback(null, event)
+      }
+    })
+
+    return {
+      remove: () => {
+        sub.remove()
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Discovery
+  // -----------------------------------------------------------------------
+
+  async discoverAllServicesAndCharacteristics(deviceId: string, transactionId?: string | null): Promise<DeviceInfo> {
+    return this.nativeModule.discoverAllServicesAndCharacteristics(deviceId, transactionId ?? null)
+  }
+
+  // -----------------------------------------------------------------------
+  // Read / Write
+  // -----------------------------------------------------------------------
+
+  async readCharacteristicForDevice(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    transactionId?: string | null
+  ): Promise<CharacteristicInfo> {
+    return this.nativeModule.readCharacteristic(deviceId, serviceUuid, characteristicUuid, transactionId ?? null)
+  }
+
+  async writeCharacteristicForDevice(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    value: string,
+    withResponse: boolean,
+    transactionId?: string | null
+  ): Promise<CharacteristicInfo> {
+    return this.nativeModule.writeCharacteristic(
+      deviceId,
+      serviceUuid,
+      characteristicUuid,
+      value,
+      withResponse,
+      transactionId ?? null
+    )
+  }
+
+  // -----------------------------------------------------------------------
+  // Monitor
+  // -----------------------------------------------------------------------
+
+  monitorCharacteristicForDevice(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    listener: (error: BleError | null, characteristic: CharacteristicValueEvent | null) => void,
+    options?: MonitorOptions
+  ): Subscription {
+    const txId = options?.transactionId ?? nextTransactionId()
+    const batchInterval = options?.batchInterval ?? 0
+
+    this.activeTransactionIds.add(txId)
+
+    // Create batcher for this monitor (0 = immediate delivery)
+    const batcher = new EventBatcher<CharacteristicValueEvent>(batchInterval, 50, batch => {
+      batch.forEach(event => listener(null, event))
+    })
+    this.monitorBatchers.set(txId, batcher)
+
+    // Listen to native characteristic value events, filtered by key fields
+    const sub = this.nativeModule.onCharacteristicValueUpdate(event => {
+      if (event.deviceId !== deviceId) return
+      if (event.serviceUuid !== serviceUuid) return
+      if (event.characteristicUuid !== characteristicUuid) return
+      if (event.transactionId !== txId) return
+
+      batcher.push(event)
+    })
+    this.monitorSubscriptions.set(txId, sub)
+
+    // Tell native to start monitoring
+    this.nativeModule.monitorCharacteristic(deviceId, serviceUuid, characteristicUuid, null, txId)
+
+    let removed = false
+    return {
+      remove: () => {
+        if (removed) return
+        removed = true
+
+        // Dispose batcher
+        batcher.dispose()
+        this.monitorBatchers.delete(txId)
+
+        // Remove JS listener
+        sub.remove()
+        this.monitorSubscriptions.delete(txId)
+
+        // Cancel native transaction
+        this.activeTransactionIds.delete(txId)
+        this.nativeModule.cancelTransaction(txId).catch(() => {
+          // Best-effort cancellation
+        })
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // MTU
+  // -----------------------------------------------------------------------
+
+  async requestMTUForDevice(deviceId: string, mtu: number, transactionId?: string | null): Promise<DeviceInfo> {
+    return this.nativeModule.requestMtu(deviceId, mtu, transactionId ?? null)
+  }
+
+  // -----------------------------------------------------------------------
+  // Connection Priority
+  // -----------------------------------------------------------------------
+
+  async requestConnectionPriority(deviceId: string, priority: ConnectionPriority): Promise<DeviceInfo> {
+    return this.nativeModule.requestConnectionPriority(deviceId, priority)
+  }
+
+  // -----------------------------------------------------------------------
+  // Cancellation
+  // -----------------------------------------------------------------------
+
+  async cancelTransaction(transactionId: string): Promise<void> {
+    this.activeTransactionIds.delete(transactionId)
+    await this.nativeModule.cancelTransaction(transactionId)
+  }
+}
