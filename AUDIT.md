@@ -136,6 +136,10 @@ Static mutable state shared across instances. `clear()` in `destroyClient()` inv
 
 Global JVM-wide setting that overwrites any other library's error handler.
 
+### 21. Disconnection event always sends null error (Android)
+
+`BlePlxModule.java:413` sends `DisconnectionEvent` with `null` error for both normal and abnormal disconnects. GATT error codes (e.g., GATT 133) go to `onErrorCallback` (which rejects the connect promise) but never to the disconnect event listener. Users calling `onDeviceDisconnected` can't distinguish clean disconnects from error-triggered ones.
+
 ### 19. Promise double-resolution via `onDisposed` (iOS)
 
 Every Rx subscription has both completion handlers and `onDisposed` that tries to reject with "cancelled." Relies on fragile `SafePromise` flag (which itself is not thread-safe — see #2).
