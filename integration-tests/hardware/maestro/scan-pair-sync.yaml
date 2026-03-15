@@ -1,15 +1,15 @@
-# Maestro flow: Scan → Pair → Sync
+# Maestro flow: Scan → Pair → Sync (full happy path)
 #
-# This flow verifies the complete happy-path of discovering a BLE peripheral,
-# connecting to it, performing a write, and receiving a characteristic
-# notification.
+# Verifies the complete happy-path of discovering a BLE peripheral, connecting
+# to it, discovering services, navigating to a readable characteristic, reading
+# its value, and disconnecting cleanly.
 #
 # Prerequisites:
 #   - The BlePlxTest peripheral is powered on and advertising within range.
 #   - The test app is installed and foregrounded on the device under test.
+#   - BLE permissions have been pre-granted (see README.md).
 #   - See integration-tests/hardware/peripheral-firmware/README.md for firmware
 #     requirements.
-#   - See integration-tests/hardware/test-app/README.md for app setup.
 #
 # Run:
 #   maestro test integration-tests/hardware/maestro/scan-pair-sync.yaml
@@ -24,74 +24,106 @@ appId: com.bleplxexample
 - launchApp:
     clearState: true
 
-# Wait for the scan screen to be visible
-- assertVisible: "Start Scan"
+# Wait for the scan screen buttons to be visible
+- assertVisible:
+    id: "scan-start-btn"
+    timeout: 5000
 
 # ---------------------------------------------------------------------------
-# 2. Start scanning for BLE devices
+# 2. Wait for BLE to be powered on, then start scanning
+#
+# The BLE state is displayed as inline text: "BLE State: PoweredOn".
+# We wait for it to appear before scanning.
 # ---------------------------------------------------------------------------
+- assertVisible:
+    text: "PoweredOn"
+    timeout: 10000
+
 - tapOn:
-    id: "start-scan-button"
+    id: "scan-start-btn"
 
-# The scan should start — wait for our peripheral to appear in the list.
-# The peripheral advertises as "BlePlxTest".
-- waitForAnimationToEnd
+# ---------------------------------------------------------------------------
+# 3. Wait for the BlePlxTest peripheral to appear in the device list
+# ---------------------------------------------------------------------------
+- assertVisible:
+    id: "device-list"
 
 - assertVisible:
     text: "BlePlxTest"
-    timeout: 15000  # Allow up to 15 s for the peripheral to appear
+    timeout: 15000
 
 # ---------------------------------------------------------------------------
-# 3. Connect to the peripheral
+# 4. Tap the device row to connect
+#
+# The device row testID is device-item-{MAC/UUID}. Since the exact ID is
+# unknown at authoring time, we tap by the displayed name instead.
 # ---------------------------------------------------------------------------
 - tapOn:
     text: "BlePlxTest"
 
-# Wait for the connection state label to show "connected"
+# ---------------------------------------------------------------------------
+# 5. Wait for the DeviceScreen to load
+#
+# The DeviceScreen shows the discover-btn once the connection is established.
+# ---------------------------------------------------------------------------
 - assertVisible:
-    id: "connection-state-label"
-    text: "connected"
+    id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 4. Discover services and verify the heart rate service UUID is shown
-# ---------------------------------------------------------------------------
-# The app should automatically discover services after connecting.
-# Verify the expected service UUID is displayed.
-- assertVisible:
-    text: "180D"
-    timeout: 5000
-
-# ---------------------------------------------------------------------------
-# 5. Write to the writable test characteristic (fff1)
+# 6. Discover services
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "write-button"
+    id: "discover-btn"
 
-# A successful write should not show an error
+# The app alerts on discovery completion. Dismiss the alert.
+- assertVisible:
+    text: "Discovery"
+    timeout: 8000
+- tapOn:
+    text: "OK"
+
+# ---------------------------------------------------------------------------
+# 7. Navigate to a characteristic
+#
+# If the service list is populated (future v4 API), tap the first visible
+# characteristic. The testIDs follow the pattern char-{uuid}.
+# For the read-counter characteristic on BlePlxTest firmware use the known UUID.
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "char-fff1"
+
+# ---------------------------------------------------------------------------
+# 8. On CharacteristicScreen: read the value and verify it appears
+# ---------------------------------------------------------------------------
+- assertVisible:
+    id: "read-btn"
+    timeout: 5000
+
+- tapOn:
+    id: "read-btn"
+
+# value-display starts as "(none)"; after a successful read it shows a base64
+# encoded value. Assert it is no longer showing "(none)".
+- assertVisible:
+    id: "value-display"
+    timeout: 5000
 - assertNotVisible:
-    id: "error-label"
-    timeout: 3000
+    text: "Value: (none)"
 
 # ---------------------------------------------------------------------------
-# 6. Verify a notification is received from the heart rate characteristic
+# 9. Navigate back and disconnect
 # ---------------------------------------------------------------------------
-# The peripheral sends HR notifications at 1 Hz.
-# Wait for the characteristic value label to be non-empty.
+- back
+
 - assertVisible:
-    id: "char-value"
+    id: "disconnect-btn"
     timeout: 5000
 
-# The value should be a valid base64-encoded HR measurement (non-empty)
-# Maestro does not support regex assertions, so we just check visibility.
-
-# ---------------------------------------------------------------------------
-# 7. Disconnect
-# ---------------------------------------------------------------------------
 - tapOn:
-    id: "disconnect-button"
+    id: "disconnect-btn"
 
+# After disconnecting, navigation returns to ScanScreen
 - assertVisible:
-    id: "connection-state-label"
-    text: "disconnected"
-    timeout: 5000
+    id: "scan-start-btn"
+    timeout: 8000

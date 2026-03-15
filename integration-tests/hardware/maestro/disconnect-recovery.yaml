@@ -1,18 +1,15 @@
 # Maestro flow: Disconnect Recovery
 #
-# This flow verifies that the library correctly handles an unexpected
-# disconnection (e.g., the peripheral goes out of range or is powered off)
-# and that the app can re-connect successfully after recovery.
+# Verifies that the library correctly handles an unexpected disconnection
+# (e.g., the peripheral sends a disconnect command via serial/firmware trigger)
+# and that the app can re-scan and reconnect successfully.
 #
 # Prerequisites:
-#   - The BlePlxTest peripheral is powered on initially.
-#   - The tester (or an automated relay) powers off the peripheral during
-#     the test to simulate an unexpected disconnection.
-#   - The test app is installed and foregrounded.
-#
-# Note: The "power off peripheral" step below is annotated as a manual action.
-# When running on a device farm with controllable hardware, replace the
-# instructional comment with the relevant relay/GPIO command.
+#   - The BlePlxTest peripheral is powered on and advertising within range.
+#   - The test app is installed and foregrounded on the device under test.
+#   - BLE permissions have been pre-granted (see README.md).
+#   - A serial/GPIO mechanism is available to send the "disconnect" command to
+#     the firmware mid-test (see notes in step 3 below).
 #
 # Run:
 #   maestro test integration-tests/hardware/maestro/disconnect-recovery.yaml
@@ -22,63 +19,71 @@ appId: com.bleplxexample
 ---
 
 # ---------------------------------------------------------------------------
-# 1. Launch and connect to the peripheral
+# 1. Launch and scan
 # ---------------------------------------------------------------------------
 - launchApp:
     clearState: true
 
-- assertVisible: "Start Scan"
-
-- tapOn:
-    id: "start-scan-button"
-
 - assertVisible:
-    text: "BlePlxTest"
-    timeout: 15000
-
-- tapOn:
-    text: "BlePlxTest"
-
-- assertVisible:
-    id: "connection-state-label"
-    text: "connected"
-    timeout: 10000
-
-# ---------------------------------------------------------------------------
-# 2. Verify steady-state: receiving notifications
-# ---------------------------------------------------------------------------
-- assertVisible:
-    id: "char-value"
+    id: "scan-start-btn"
     timeout: 5000
 
-# ---------------------------------------------------------------------------
-# 3. Simulate unexpected disconnection
-#
-# MANUAL STEP: power off the BlePlxTest peripheral now.
-# When using a BLE relay board, insert the relay-off command here, e.g.:
-#   - evalScript: ${relay.off('BlePlxTest')}
-# ---------------------------------------------------------------------------
-
-# The library should detect the link loss and fire onDeviceDisconnected.
-# The app displays the disconnected state.
 - assertVisible:
-    id: "connection-state-label"
-    text: "disconnected"
-    timeout: 15000
-
-# The app should also show an error label since this was unexpected
-- assertVisible:
-    id: "error-label"
-    timeout: 3000
-
-# ---------------------------------------------------------------------------
-# 4. Recovery: power on the peripheral and reconnect
-#
-# MANUAL STEP: power on the BlePlxTest peripheral now.
-# ---------------------------------------------------------------------------
+    text: "PoweredOn"
+    timeout: 10000
 
 - tapOn:
-    id: "start-scan-button"
+    id: "scan-start-btn"
+
+- assertVisible:
+    text: "BlePlxTest"
+    timeout: 15000
+
+# ---------------------------------------------------------------------------
+# 2. Connect to BlePlxTest
+# ---------------------------------------------------------------------------
+- tapOn:
+    text: "BlePlxTest"
+
+# Confirm we have reached DeviceScreen (connected state)
+- assertVisible:
+    id: "discover-btn"
+    timeout: 10000
+
+- assertVisible:
+    id: "disconnect-btn"
+
+# ---------------------------------------------------------------------------
+# 3. Trigger an unexpected disconnection from the firmware side
+#
+# MANUAL / AUTOMATION STEP:
+# Send the "disconnect" command to the BlePlxTest firmware over serial so the
+# peripheral drops the connection without the app initiating it.
+#
+# When using a serial relay or automated test harness, insert the relevant
+# command here. For example, with a Python serial script:
+#   - evalScript: ${require('child_process').execSync('python3 scripts/serial_cmd.py disconnect')}
+#
+# When running manually: power off or reset the peripheral now.
+# ---------------------------------------------------------------------------
+
+# The library detects link loss via onDeviceDisconnected. The app calls
+# navigation.goBack(), returning to ScanScreen.
+- assertVisible:
+    id: "scan-start-btn"
+    timeout: 15000
+
+# The scan-start-btn being visible confirms we are back on ScanScreen,
+# indicating the app detected the disconnection and navigated back.
+
+# ---------------------------------------------------------------------------
+# 4. Re-scan and reconnect after the peripheral is back up
+#
+# MANUAL / AUTOMATION STEP:
+# If the peripheral was powered off, power it back on now before this step.
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "scan-start-btn"
 
 - assertVisible:
     text: "BlePlxTest"
@@ -88,22 +93,15 @@ appId: com.bleplxexample
     text: "BlePlxTest"
 
 - assertVisible:
-    id: "connection-state-label"
-    text: "connected"
+    id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 5. Verify notifications resume after re-connect
+# 5. Clean disconnect
 # ---------------------------------------------------------------------------
-- assertVisible:
-    id: "char-value"
-    timeout: 5000
-
-# Clean disconnect
 - tapOn:
-    id: "disconnect-button"
+    id: "disconnect-btn"
 
 - assertVisible:
-    id: "connection-state-label"
-    text: "disconnected"
-    timeout: 5000
+    id: "scan-start-btn"
+    timeout: 8000

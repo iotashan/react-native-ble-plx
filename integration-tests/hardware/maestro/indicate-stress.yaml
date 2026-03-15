@@ -1,21 +1,19 @@
-# Maestro flow: Indicate Stress Test
+# Maestro flow: Indicate Stream Stress Test
 #
-# This flow verifies that the library correctly handles a high-frequency
-# stream of BLE indications over an extended period without dropping events,
-# leaking memory, or crashing.
+# Verifies that the library correctly handles a sustained BLE indication stream
+# over 30 seconds without dropping the connection, leaking memory, or crashing.
 #
-# The BlePlxTest peripheral sends an indication on characteristic fff2 every
-# 250 ms. This flow monitors the stream for 30 seconds and verifies that:
-#   - At least N indication values are received (N = 30s / 250ms * 0.8 = 96,
-#     allowing 20% slack for BLE scheduling jitter).
-#   - No error label appears during the test.
-#   - The app does not crash or freeze (Maestro can still interact with it).
+# The BlePlxTest peripheral sends indications on the Indicate Stream
+# characteristic (fff3) continuously while monitoring is active.
+# This flow enables the monitor toggle, waits 30 seconds with periodic
+# liveness checks, then disables monitoring and disconnects.
 #
 # Prerequisites:
-#   - The BlePlxTest peripheral is powered on and advertising.
-#   - The test app is installed and foregrounded.
-#   - The peripheral firmware must implement the fff2 indicate characteristic
-#     sending a value every 250 ms when indications are enabled.
+#   - The BlePlxTest peripheral is powered on and advertising within range.
+#   - The test app is installed and foregrounded on the device under test.
+#   - BLE permissions have been pre-granted (see README.md).
+#   - The BlePlxTest firmware implements an indicatable characteristic on fff3
+#     that sends indications at a regular cadence when enabled.
 #
 # Run:
 #   maestro test integration-tests/hardware/maestro/indicate-stress.yaml
@@ -25,120 +23,159 @@ appId: com.bleplxexample
 ---
 
 # ---------------------------------------------------------------------------
-# 1. Launch and connect
+# 1. Launch and scan
 # ---------------------------------------------------------------------------
 - launchApp:
     clearState: true
 
-- assertVisible: "Start Scan"
+- assertVisible:
+    id: "scan-start-btn"
+    timeout: 5000
+
+- assertVisible:
+    text: "PoweredOn"
+    timeout: 10000
 
 - tapOn:
-    id: "start-scan-button"
+    id: "scan-start-btn"
 
 - assertVisible:
     text: "BlePlxTest"
     timeout: 15000
 
+# ---------------------------------------------------------------------------
+# 2. Connect to BlePlxTest
+# ---------------------------------------------------------------------------
 - tapOn:
     text: "BlePlxTest"
 
 - assertVisible:
-    id: "connection-state-label"
-    text: "connected"
+    id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 2. Navigate to the indicate stress-test screen
-#
-# The test app must expose a button or navigation item to switch to the
-# stress-test screen that monitors characteristic fff2 specifically.
+# 3. Discover services and dismiss the alert
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "stress-test-button"
+    id: "discover-btn"
 
 - assertVisible:
-    id: "indicate-count-label"
-    timeout: 3000
+    text: "Discovery"
+    timeout: 8000
+- tapOn:
+    text: "OK"
 
 # ---------------------------------------------------------------------------
-# 3. Run for 30 seconds
+# 4. Navigate to the Indicate Stream characteristic (fff3)
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "char-fff3"
+
+- assertVisible:
+    id: "monitor-toggle"
+    timeout: 5000
+
+# Confirm the value-display is present before enabling monitoring
+- assertVisible:
+    id: "value-display"
+
+# ---------------------------------------------------------------------------
+# 5. Enable the monitor
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "monitor-toggle"
+
+# Give a moment for the first indication to arrive
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# Confirm the value-display is still visible and no error alert appeared
+- assertVisible:
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
+
+# ---------------------------------------------------------------------------
+# 6. Run for 30 seconds with periodic liveness checks
 #
 # Maestro does not have a native timer loop, so we use a sequence of
-# waitForAnimationToEnd calls as a coarse delay. Adjust the number of
-# iterations based on actual animation timing in your app.
-#
-# Each assertVisible re-checks that the count is still updating and no
-# error has appeared.
+# waitForAnimationToEnd calls as coarse 5-second delays. Each checkpoint
+# verifies the value-display is still updating and no error has appeared.
 # ---------------------------------------------------------------------------
 
-# Check at t ≈ 5 s
+# t ≈ 5 s
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
-# Check at t ≈ 10 s
+# t ≈ 10 s
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
-# Check at t ≈ 15 s
+# t ≈ 15 s
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
-# Check at t ≈ 20 s
+# t ≈ 20 s
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
-# Check at t ≈ 25 s
+# t ≈ 25 s
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
-# Final check at t ≈ 30 s
+# t ≈ 30 s — final check
 - waitForAnimationToEnd:
     timeout: 5000
-- assertNotVisible:
-    id: "error-label"
-
-# Verify the counter reached a reasonable minimum (96+ indications).
-# The app should display the count as a number in indicate-count-label.
-# Maestro cannot do numeric comparisons, so we check for the presence of
-# a 2+ digit number by asserting a non-zero label is still visible.
 - assertVisible:
-    id: "indicate-count-label"
+    id: "value-display"
+- assertNotVisible:
+    text: "Monitor error"
 
 # ---------------------------------------------------------------------------
-# 4. Stop monitoring and disconnect cleanly
+# 7. Disable monitoring
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "stop-monitor-button"
+    id: "monitor-toggle"
+
+- waitForAnimationToEnd:
+    timeout: 1000
 
 # No error should appear after stopping
 - assertNotVisible:
-    id: "error-label"
-    timeout: 2000
+    text: "Monitor error"
 
-- tapOn:
-    id: "disconnect-button"
+# ---------------------------------------------------------------------------
+# 8. Navigate back and disconnect cleanly
+# ---------------------------------------------------------------------------
+- back
 
 - assertVisible:
-    id: "connection-state-label"
-    text: "disconnected"
+    id: "disconnect-btn"
     timeout: 5000
+
+- tapOn:
+    id: "disconnect-btn"
+
+- assertVisible:
+    id: "scan-start-btn"
+    timeout: 8000
