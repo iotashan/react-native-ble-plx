@@ -160,6 +160,13 @@
     "jsSrcsDir": "src/specs",
     "android": {
       "javaPackageName": "com.bleplx"
+    },
+    "ios": {
+      "modules": {
+        "NativeBlePlx": {
+          "className": "BlePlx"
+        }
+      }
     }
   },
   "react-native-builder-bob": {

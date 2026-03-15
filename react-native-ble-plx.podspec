@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/dotintent/react-native-ble-plx.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
-  s.exclude_files = "ios/BlePlx-Bridging-Header.h"
+  s.exclude_files = ["ios/BlePlx-Bridging-Header.h", "ios/Tests/**/*", "ios/BlePlx.xcodeproj/**/*"]
   s.swift_version = "5.9"
 
   s.frameworks = "CoreBluetooth"
