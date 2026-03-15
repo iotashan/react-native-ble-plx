@@ -52,16 +52,29 @@ final class L2CAPChannelWrapper: NSObject, StreamDelegate, @unchecked Sendable {
             throw BleError(code: .l2capWriteFailed, message: "L2CAP output stream not ready")
         }
 
-        let bytesWritten = data.withUnsafeBytes { buffer -> Int in
-            guard let ptr = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return -1 }
-            return outputStream.write(ptr, maxLength: data.count)
-        }
+        // Loop to handle partial writes — outputStream.write() may return
+        // less than data.count without returning -1 (not an error, just
+        // the output buffer being full). We must write remaining bytes.
+        var offset = 0
+        while offset < data.count {
+            let bytesWritten = data.withUnsafeBytes { buffer -> Int in
+                guard let ptr = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return -1 }
+                return outputStream.write(ptr.advanced(by: offset), maxLength: data.count - offset)
+            }
 
-        if bytesWritten < 0 {
-            throw BleError(
-                code: .l2capWriteFailed,
-                message: "L2CAP write failed: \(outputStream.streamError?.localizedDescription ?? "unknown error")"
-            )
+            if bytesWritten < 0 {
+                throw BleError(
+                    code: .l2capWriteFailed,
+                    message: "L2CAP write failed: \(outputStream.streamError?.localizedDescription ?? "unknown error")"
+                )
+            }
+
+            if bytesWritten == 0 {
+                // Stream buffer full — caller should retry
+                throw BleError(code: .l2capWriteFailed, message: "L2CAP output buffer full, wrote \(offset)/\(data.count) bytes")
+            }
+
+            offset += bytesWritten
         }
     }
 
