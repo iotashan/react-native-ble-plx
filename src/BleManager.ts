@@ -227,7 +227,7 @@ function getNativeModule(): NativeBlePlxSpec {
 // ---------------------------------------------------------------------------
 
 export class BleManager {
-  private nativeModule: NativeBlePlxSpec
+  private cachedNativeModule: NativeBlePlxSpec | null = null
   private scanBatcher: EventBatcher<ScanResult> | null = null
   private scanSubscription: EventSubscription | null = null
   private errorSubscription: EventSubscription | null = null
@@ -238,8 +238,14 @@ export class BleManager {
   private scanBatchIntervalMs: number
 
   constructor(options?: BleManagerOptions) {
-    this.nativeModule = getNativeModule()
     this.scanBatchIntervalMs = options?.scanBatchIntervalMs ?? 100
+  }
+
+  private get nativeModule(): NativeBlePlxSpec {
+    if (!this.cachedNativeModule) {
+      this.cachedNativeModule = getNativeModule()
+    }
+    return this.cachedNativeModule
   }
 
   // -----------------------------------------------------------------------
