@@ -40,3 +40,30 @@ test('max batch size caps delivery', done => {
   })
   for (let i = 0; i < 10; i += 1) batcher.push(i)
 })
+
+test('dispose discards buffered events instead of flushing', () => {
+  const received: number[] = []
+  const batcher = new EventBatcher<number>(5000, 50, batch => {
+    received.push(...batch)
+  })
+  batcher.push(1)
+  batcher.push(2)
+  batcher.push(3)
+
+  // Events are buffered (interval is 5000ms)
+  expect(received).toEqual([])
+
+  // Dispose should discard, not flush
+  batcher.dispose()
+  expect(received).toEqual([])
+})
+
+test('push after dispose is ignored', () => {
+  const received: number[] = []
+  const batcher = new EventBatcher<number>(0, 50, batch => {
+    received.push(...batch)
+  })
+  batcher.dispose()
+  batcher.push(1)
+  expect(received).toEqual([])
+})

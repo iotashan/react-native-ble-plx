@@ -37,6 +37,6 @@ export class EventBatcher<T> {
       clearInterval(this.timer)
       this.timer = null
     }
-    this.flush()
+    this.buffer.length = 0
   }
 }
