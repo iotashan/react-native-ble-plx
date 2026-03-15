@@ -79,8 +79,10 @@ Background BLE with state restoration is **supported** (not dropped — it's a v
   - Bonding state management as Kotlin Flow
   - Connection lifecycle with retry
 - **Nordic Scanner Compat Library** for scanning
-  - Handles scan throttle heuristics (5 starts per 30s window)
+  - Provides consistent scan API across Android versions
   - BLE 5.0 extended advertising scan support
+  - **Does NOT handle scan throttling automatically** — we must implement our own debouncing (Android 7+ limits to ~5 `startScan` calls per 30s; exceeding this silently returns zero results)
+- **Auto-MTU on connect**: Request MTU 517 during connection setup automatically (the #1 user-reported issue with current ble-plx is silent data truncation from the 23-byte default)
 - **Kotlin coroutines** for async operations (natural TurboModule Promise mapping)
 - **Thread-safe by design**: Nordic library handles GATT threading; coroutine dispatchers for our code
 - **Android 12+ permissions**: proper `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` runtime checks
@@ -89,8 +91,16 @@ Background BLE with state restoration is **supported** (not dropped — it's a v
 ### iOS Native (Swift + ObjC++ adapter)
 
 - **Direct CoreBluetooth** with custom async/await wrapper
-- **Swift actor** for operation queue serialization (internal only)
-- **Thin `@objc` adapter** exposed to TurboModule — actors are NOT the TurboModule surface directly. The adapter bridges between the Codegen-generated ObjC++ interface and the internal Swift actor. Per [RN docs](https://reactnative.dev/docs/0.79/the-new-architecture/turbo-modules-with-swift).
+- **Swift actor with custom executor** (Swift 5.9+) backed by the same `DispatchQueue` as CoreBluetooth — solves the `CBPeripheral`/`CBCentralManager` non-Sendable problem
+- **`@preconcurrency import CoreBluetooth`** to silence Swift 6 Sendable warnings
+- **Thin ObjC++ `.mm` entry point** — Codegen generates ObjC headers, pure-Swift TurboModules are not possible. The chain is:
+
+```
+JS Spec → Codegen → ObjC++ TurboModule (.mm) → Swift BLEModuleImpl (@objc) → BLEActor → CoreBluetooth
+```
+
+- **Never pass CB objects across actor boundaries** — extract Sendable values (UUID, Data, String) first
+- **GATT operation queue** as a separate actor — CoreBluetooth does NOT serialize operations; rapid successive reads/writes fail silently
   - `withResponse` writes await completion callback
   - `withoutResponse` writes check `canSendWriteWithoutResponse` + flow control
 - **State restoration** via `CBCentralManagerOptionRestoreIdentifierKey` (proper implementation, not the broken `.amb()` race)
@@ -122,7 +132,7 @@ Background BLE with state restoration is **supported** (not dropped — it's a v
 | `requestPhy(deviceId, txPhy, rxPhy)` | BLE 5.0 PHY selection |
 | `readPhy(deviceId)` | Read current PHY |
 | `openL2CAPChannel(deviceId, psm)` | iOS L2CAP channel (iOS only) |
-| `requestConnectionParameters(deviceId, params)` | Connection interval, latency, timeout |
+| `requestConnectionPriority(deviceId, priority)` | Android: coarse priority (balanced/high/lowPower). iOS: no-op. Fine-grained params are peripheral-firmware-only. |
 | `getAuthorizationStatus()` | iOS Bluetooth authorization state |
 | `onConnectionEvent(listener)` | iOS 13+ connection events |
 
@@ -267,70 +277,173 @@ interface BleError {
 
 ## 5a. Codegen Spec (`NativeBleModule.ts`)
 
-The Codegen spec is the contract between JS and native. Key shape:
+The Codegen spec is the contract between JS and native. File MUST be named `NativeBlePlx.ts` (prefix `Native` required by Codegen). All types MUST be defined inline (no imports from other files). Uses `CodegenTypes.EventEmitter<T>` for streaming data (callbacks are single-fire in Codegen).
+
+**`codegenConfig` in package.json:**
+```json
+{
+  "codegenConfig": {
+    "name": "NativeBlePlxSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": { "javaPackageName": "com.bleplx" }
+  }
+}
+```
+
+**Spec file (`src/specs/NativeBlePlx.ts`):**
 
 ```typescript
-import type { TurboModule } from 'react-native';
+import type { TurboModule, CodegenTypes } from 'react-native';
 import { TurboModuleRegistry } from 'react-native';
+
+// All types must be inline — Codegen ignores imports from other files
+// Union types NOT supported — use string with runtime validation
+
+export type DeviceInfo = Readonly<{
+  id: string;              // Android: MAC address, iOS: opaque UUID
+  name: string | null;
+  rssi: number;
+  mtu: number;
+  isConnectable: boolean | null;
+  serviceUuids: ReadonlyArray<string>;
+  manufacturerData: string | null; // Base64-encoded
+}>;
+
+export type CharacteristicInfo = Readonly<{
+  deviceId: string;
+  serviceUuid: string;
+  uuid: string;
+  value: string | null;    // Base64-encoded
+  isNotifying: boolean;
+  isIndicatable: boolean;
+  isReadable: boolean;
+  isWritableWithResponse: boolean;
+  isWritableWithoutResponse: boolean;
+}>;
+
+export type ScanResult = Readonly<{
+  id: string;
+  name: string | null;
+  rssi: number;
+  serviceUuids: ReadonlyArray<string>;
+  manufacturerData: string | null;
+}>;
+
+export type ConnectionStateEvent = Readonly<{
+  deviceId: string;
+  state: string;           // 'connecting' | 'connected' | 'disconnecting' | 'disconnected'
+  errorCode: number | null;
+  errorMessage: string | null;
+}>;
+
+export type CharacteristicValueEvent = Readonly<{
+  deviceId: string;
+  serviceUuid: string;
+  characteristicUuid: string;
+  value: string;           // Base64-encoded
+  transactionId: string | null;
+}>;
+
+export type StateChangeEvent = Readonly<{
+  state: string;           // 'Unknown' | 'Resetting' | 'Unsupported' | 'Unauthorized' | 'PoweredOff' | 'PoweredOn'
+}>;
+
+export type RestoreStateEvent = Readonly<{
+  devices: ReadonlyArray<DeviceInfo>;
+}>;
+
+export type BleErrorInfo = Readonly<{
+  code: number;
+  message: string;
+  isRetryable: boolean;
+  deviceId: string | null;
+  serviceUuid: string | null;
+  characteristicUuid: string | null;
+  operation: string | null;
+  platform: string;
+  nativeDomain: string | null;
+  nativeCode: number | null;
+  gattStatus: number | null;
+  attErrorCode: number | null;
+}>;
 
 export interface Spec extends TurboModule {
   // Lifecycle
-  createClient(restoreStateIdentifier?: string): Promise<void>;
+  createClient(restoreStateIdentifier: string | null): Promise<void>;
   destroyClient(): Promise<void>;
 
   // State
   state(): Promise<string>;
-  onStateChange(callback: (state: string) => void): void;
 
-  // Scanning
-  startDeviceScan(uuids: string[] | null, options: Object | null): void;
+  // Scanning (scan throttle debouncing built-in)
+  startDeviceScan(uuids: ReadonlyArray<string> | null, optionsJson: string): void;
   stopDeviceScan(): Promise<void>;
 
-  // Connection
-  connectToDevice(deviceId: string, options?: Object): Promise<Object>;
-  cancelDeviceConnection(deviceId: string): Promise<Object>;
+  // Connection (auto-MTU 517 on Android)
+  connectToDevice(deviceId: string, optionsJson: string): Promise<DeviceInfo>;
+  cancelDeviceConnection(deviceId: string): Promise<DeviceInfo>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
 
   // Discovery
-  discoverAllServicesAndCharacteristicsForDevice(deviceId: string, transactionId?: string): Promise<Object>;
+  discoverAllServicesAndCharacteristics(deviceId: string, transactionId: string | null): Promise<DeviceInfo>;
 
   // Read/Write
-  readCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, transactionId?: string): Promise<Object>;
-  writeCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, value: string, withResponse: boolean, transactionId?: string): Promise<Object>;
+  readCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, transactionId: string | null): Promise<CharacteristicInfo>;
+  writeCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, value: string, withResponse: boolean, transactionId: string | null): Promise<CharacteristicInfo>;
 
-  // Monitor
-  monitorCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, transactionId?: string, options?: Object): void;
+  // Monitor (use EventEmitter, not callback — callbacks are single-fire)
+  monitorCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, transactionId: string | null): void;
 
-  // MTU / PHY / Connection Parameters
-  requestMTUForDevice(deviceId: string, mtu: number, transactionId?: string): Promise<Object>;
-  requestPhy(deviceId: string, txPhy: number, rxPhy: number): Promise<Object>;
-  readPhy(deviceId: string): Promise<Object>;
-  requestConnectionParameters(deviceId: string, params: Object): Promise<Object>;
+  // MTU
+  requestMtu(deviceId: string, mtu: number, transactionId: string | null): Promise<DeviceInfo>;
 
-  // L2CAP (iOS only — Android rejects with OperationNotSupported)
-  openL2CAPChannel(deviceId: string, psm: number): Promise<Object>;
+  // PHY (Android only — iOS returns current PHY info but cannot set)
+  requestPhy(deviceId: string, txPhy: number, rxPhy: number): Promise<DeviceInfo>;
+  readPhy(deviceId: string): Promise<DeviceInfo>;
 
-  // Bonding
-  getBondedDevices(): Promise<Object[]>;
+  // Connection Priority (Android only — coarse: 0=balanced, 1=high, 2=lowPower)
+  // NOTE: Fine-grained interval/latency/timeout is NOT settable from app-level APIs.
+  // Only the peripheral firmware can request specific connection parameters.
+  requestConnectionPriority(deviceId: string, priority: number): Promise<DeviceInfo>;
 
-  // Authorization (iOS)
+  // L2CAP (iOS only — PSM must be dynamic, read from GATT characteristic)
+  openL2CAPChannel(deviceId: string, psm: number): Promise<Readonly<{ channelId: number }>>;
+  writeL2CAPChannel(channelId: number, data: string): Promise<void>;
+  closeL2CAPChannel(channelId: number): Promise<void>;
+
+  // Bonding (Android: system bonded devices. iOS: not available — returns empty array)
+  getBondedDevices(): Promise<ReadonlyArray<DeviceInfo>>;
+
+  // Authorization (iOS only — Android returns 'Authorized' always)
   getAuthorizationStatus(): Promise<string>;
 
   // Cancellation
   cancelTransaction(transactionId: string): Promise<void>;
 
-  // Events (typed, emitted via Codegen event emitter)
-  // - ScanEvent: { device: Object }
-  // - ConnectionStateEvent: { deviceId: string, state: string, error?: Object }
-  // - CharacteristicValueEvent: { deviceId: string, serviceUUID: string, characteristicUUID: string, value: string, transactionId?: string }
-  // - StateChangeEvent: { state: string }
-  // - RestoreStateEvent: { devices: Object[] }
+  // ─── Typed Event Emitters (CodegenTypes.EventEmitter) ───
+  readonly onScanResult: CodegenTypes.EventEmitter<ScanResult>;
+  readonly onConnectionStateChange: CodegenTypes.EventEmitter<ConnectionStateEvent>;
+  readonly onCharacteristicValueUpdate: CodegenTypes.EventEmitter<CharacteristicValueEvent>;
+  readonly onStateChange: CodegenTypes.EventEmitter<StateChangeEvent>;
+  readonly onRestoreState: CodegenTypes.EventEmitter<RestoreStateEvent>;
+  readonly onError: CodegenTypes.EventEmitter<BleErrorInfo>;
 }
 
-export default TurboModuleRegistry.getEnforcing<Spec>('BlePlx');
+export default TurboModuleRegistry.get<Spec>('NativeBlePlx');
 ```
 
-This generates the native bindings. The actual event types are defined via the [typed native module events](https://reactnative.dev/docs/0.79/the-new-architecture/native-modules-custom-events) pattern.
+**Key design decisions from research:**
+- `TurboModuleRegistry.get` (nullable) for graceful degradation, not `getEnforcing`
+- All types inline — Codegen ignores imports
+- No union types — use string with runtime validation for enum-like values
+- Events as `readonly` `CodegenTypes.EventEmitter<T>` properties — not callbacks (single-fire only)
+- `Object` replaced with typed `Readonly<{...}>` throughout — `Object` is an escape hatch
+- `requestConnectionParameters` replaced with `requestConnectionPriority` (coarse, Android-only) — fine-grained params are peripheral-firmware-only
+- L2CAP expanded to stream lifecycle: open/write/close (not just open)
+- `optionsJson` as string for complex options (avoids Codegen type limitations)
+
+**Device identifier note:** Android uses MAC addresses (`AA:BB:CC:DD:EE:FF`), iOS uses opaque per-phone UUIDs (not per-app). The UUID can change after Bluetooth settings reset. There is NO cross-platform stable identifier — embed unique IDs in GATT characteristics or manufacturer advertising data if needed.
 
 ---
 
@@ -404,24 +517,34 @@ Nordic BLE Library handles the forced MTU=517 behavior. We document it and expos
 ### Architecture
 
 ```swift
-// TurboModule entry point
-@objc(BlePlx)
-class BlePlx: RCTEventEmitter {
-    private var bleActor: BleActor?
+// ObjC++ entry point (.mm file) — generated by Codegen, delegates to Swift
+// BlePlx.mm conforms to NativeBlePlxSpec and calls into BLEModuleImpl
 
-    @objc func createClient(_ restoreId: String?, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-        // Invalidate previous instance if exists
+// Swift implementation — exposed via @objc
+@objc public class BLEModuleImpl: NSObject {
+    private var bleActor: BLEActor?
+
+    @objc public func createClient(_ restoreId: String?) async throws {
         bleActor?.invalidate()
-        bleActor = BleActor(queue: methodQueue, restoreId: restoreId)
-        bleActor?.delegate = self
-        resolve(nil)
+        bleActor = BLEActor(restoreId: restoreId)
     }
 }
 
-// Swift actor for thread-safe BLE operations
-actor BleActor {
-    private let centralManager: CBCentralManager
-    private let delegateHandler: CentralManagerDelegate
+// BLE actor with custom executor on CoreBluetooth's queue
+@preconcurrency import CoreBluetooth
+
+actor BLEActor {
+    let queue = DispatchQueue(label: "com.bleplx.ble")
+
+    // Custom executor: actor runs on same queue as CoreBluetooth
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        queue.asUnownedSerialExecutor()
+    }
+
+    private lazy var centralManager = CBCentralManager(
+        delegate: delegateHandler, queue: queue
+    )
+    private let delegateHandler = CentralManagerDelegate()
     private var peripherals: [UUID: PeripheralWrapper] = [:]
 
     func scan(serviceUUIDs: [CBUUID]?, options: [String: Any]?) -> AsyncStream<ScanResult> { ... }
@@ -429,20 +552,37 @@ actor BleActor {
     func disconnect(peripheralId: UUID) async throws { ... }
 }
 
-// Per-peripheral operation queue
+// Per-peripheral GATT operation queue (also an actor on the BLE queue)
 actor PeripheralWrapper {
-    private let peripheral: CBPeripheral
+    private let peripheral: CBPeripheral  // Safe: same queue as actor executor
     private let delegateHandler: PeripheralDelegate
+    private let operationQueue = GATTOperationQueue()
 
     func discoverServices(_ uuids: [CBUUID]?) async throws -> [CBService] { ... }
-    func readCharacteristic(_ characteristic: CBCharacteristic) async throws -> Data { ... }
-    func writeCharacteristic(_ characteristic: CBCharacteristic, data: Data, type: CBCharacteristicWriteType) async throws { ... }
-    func setNotify(_ enabled: Bool, for characteristic: CBCharacteristic) async throws { ... }
 
-    // L2CAP
-    func openL2CAPChannel(psm: CBL2CAPPSM) async throws -> CBL2CAPChannel { ... }
+    func readCharacteristic(_ characteristic: CBCharacteristic) async throws -> Data {
+        // Queued: only one outstanding GATT operation at a time
+        return try await operationQueue.enqueue {
+            self.peripheral.readValue(for: characteristic)
+        }
+    }
 
-    // PHY (iOS doesn't expose PHY selection — document as Android-only)
+    func writeCharacteristic(_ characteristic: CBCharacteristic, data: Data, type: CBCharacteristicWriteType) async throws {
+        if type == .withoutResponse {
+            // Flow control: check canSendWriteWithoutResponse first
+            while !peripheral.canSendWriteWithoutResponse {
+                try await delegateHandler.waitForWriteReady()
+            }
+        }
+        try await operationQueue.enqueue {
+            self.peripheral.writeValue(data, for: characteristic, type: type)
+        }
+    }
+
+    // L2CAP — dynamic PSM only (no static PSMs on iOS)
+    // Must retain channel + peripheral strongly; schedule on correct RunLoop
+    // L2CAP does NOT wake suspended apps — only GATT notifications do
+    func openL2CAPChannel(psm: CBL2CAPPSM) async throws -> L2CAPChannelWrapper { ... }
 }
 ```
 
@@ -603,13 +743,9 @@ sub.remove();  // Properly cleans up native + JS listeners
 // PHY selection (Android only)
 await manager.requestPhy(deviceId, PhyType.LE_2M, PhyType.LE_2M);
 
-// Connection parameters
-await manager.requestConnectionParameters(deviceId, {
-  minInterval: 15,  // ms
-  maxInterval: 30,  // ms
-  latency: 0,
-  timeout: 4000,    // ms
-});
+// Connection priority (Android only — coarse levels, not fine-grained params)
+// Fine-grained interval/latency/timeout can only be set by peripheral firmware
+await manager.requestConnectionPriority(deviceId, ConnectionPriority.HIGH);
 
 // L2CAP (iOS only)
 const channel = await manager.openL2CAPChannel(deviceId, 0x0080);
@@ -640,7 +776,8 @@ react-native-ble-plx/
 │       ├── EventSerializer.kt    ← Native → JS event conversion
 │       └── ErrorConverter.kt     ← GATT error → unified error code
 ├── ios/
-│   ├── BlePlx.swift              ← TurboModule entry point
+│   ├── BlePlx.mm                 ← ObjC++ TurboModule entry (Codegen-generated base class)
+│   ├── BLEModuleImpl.swift       ← Swift @objc implementation (delegates to actor)
 │   ├── BleActor.swift            ← Central manager actor
 │   ├── PeripheralWrapper.swift   ← Per-peripheral operation queue actor
 │   ├── ScanManager.swift         ← Scan with AsyncStream
