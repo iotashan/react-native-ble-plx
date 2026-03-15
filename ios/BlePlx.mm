@@ -43,7 +43,7 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 
 // MARK: - Lifecycle
 
-- (void)createClient:(NSString *)restoreStateIdentifier
+- (void)createClient:(NSString * _Nullable)restoreStateIdentifier
              resolve:(RCTPromiseResolveBlock)resolve
               reject:(RCTPromiseRejectBlock)reject {
     [_impl createClientWithRestoreStateIdentifier:restoreStateIdentifier resolve:resolve reject:reject];
@@ -63,9 +63,22 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 
 // MARK: - Scanning
 
-- (void)startDeviceScan:(NSArray<NSString *> *)uuids
-                options:(NSDictionary *)options {
-    [_impl startDeviceScanWithUuids:uuids options:options];
+- (void)startDeviceScan:(NSArray * _Nullable)uuids
+                options:(JS::NativeBlePlx::SpecStartDeviceScanOptions &)options {
+    NSMutableDictionary *optionsDict = [NSMutableDictionary dictionary];
+    if (options.scanMode().has_value()) {
+        optionsDict[@"scanMode"] = @(options.scanMode().value());
+    }
+    if (options.callbackType().has_value()) {
+        optionsDict[@"callbackType"] = @(options.callbackType().value());
+    }
+    if (options.legacyScan().has_value()) {
+        optionsDict[@"legacyScan"] = @(options.legacyScan().value());
+    }
+    if (options.allowDuplicates().has_value()) {
+        optionsDict[@"allowDuplicates"] = @(options.allowDuplicates().value());
+    }
+    [_impl startDeviceScanWithUuids:uuids options:optionsDict];
 }
 
 - (void)stopDeviceScan:(RCTPromiseResolveBlock)resolve
@@ -76,10 +89,26 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 // MARK: - Connection
 
 - (void)connectToDevice:(NSString *)deviceId
-                options:(NSDictionary *)options
+                options:(JS::NativeBlePlx::SpecConnectToDeviceOptions &)options
                 resolve:(RCTPromiseResolveBlock)resolve
                  reject:(RCTPromiseRejectBlock)reject {
-    [_impl connectToDeviceWithDeviceId:deviceId options:options resolve:resolve reject:reject];
+    NSMutableDictionary *optionsDict = [NSMutableDictionary dictionary];
+    if (options.autoConnect().has_value()) {
+        optionsDict[@"autoConnect"] = @(options.autoConnect().value());
+    }
+    if (options.timeout().has_value()) {
+        optionsDict[@"timeout"] = @(options.timeout().value());
+    }
+    if (options.retries().has_value()) {
+        optionsDict[@"retries"] = @(options.retries().value());
+    }
+    if (options.retryDelay().has_value()) {
+        optionsDict[@"retryDelay"] = @(options.retryDelay().value());
+    }
+    if (options.requestMtu().has_value()) {
+        optionsDict[@"requestMtu"] = @(options.requestMtu().value());
+    }
+    [_impl connectToDeviceWithDeviceId:deviceId options:optionsDict resolve:resolve reject:reject];
 }
 
 - (void)cancelDeviceConnection:(NSString *)deviceId
@@ -97,7 +126,7 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 // MARK: - Discovery
 
 - (void)discoverAllServicesAndCharacteristics:(NSString *)deviceId
-                                transactionId:(NSString *)transactionId
+                                transactionId:(NSString * _Nullable)transactionId
                                       resolve:(RCTPromiseResolveBlock)resolve
                                        reject:(RCTPromiseRejectBlock)reject {
     [_impl discoverAllServicesAndCharacteristicsWithDeviceId:deviceId transactionId:transactionId resolve:resolve reject:reject];
@@ -108,7 +137,7 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 - (void)readCharacteristic:(NSString *)deviceId
                serviceUuid:(NSString *)serviceUuid
         characteristicUuid:(NSString *)characteristicUuid
-             transactionId:(NSString *)transactionId
+             transactionId:(NSString * _Nullable)transactionId
                    resolve:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject {
     [_impl readCharacteristicWithDeviceId:deviceId serviceUuid:serviceUuid characteristicUuid:characteristicUuid transactionId:transactionId resolve:resolve reject:reject];
@@ -119,7 +148,7 @@ RCT_EXPORT_MODULE(NativeBlePlx)
          characteristicUuid:(NSString *)characteristicUuid
                       value:(NSString *)value
                withResponse:(BOOL)withResponse
-              transactionId:(NSString *)transactionId
+              transactionId:(NSString * _Nullable)transactionId
                     resolve:(RCTPromiseResolveBlock)resolve
                      reject:(RCTPromiseRejectBlock)reject {
     [_impl writeCharacteristicWithDeviceId:deviceId serviceUuid:serviceUuid characteristicUuid:characteristicUuid value:value withResponse:withResponse transactionId:transactionId resolve:resolve reject:reject];
@@ -130,8 +159,8 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 - (void)monitorCharacteristic:(NSString *)deviceId
                   serviceUuid:(NSString *)serviceUuid
            characteristicUuid:(NSString *)characteristicUuid
-             subscriptionType:(NSString *)subscriptionType
-                transactionId:(NSString *)transactionId {
+             subscriptionType:(NSString * _Nullable)subscriptionType
+                transactionId:(NSString * _Nullable)transactionId {
     [_impl monitorCharacteristicWithDeviceId:deviceId serviceUuid:serviceUuid characteristicUuid:characteristicUuid subscriptionType:subscriptionType transactionId:transactionId];
 }
 
@@ -145,7 +174,7 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 
 - (void)requestMtu:(NSString *)deviceId
                mtu:(double)mtu
-     transactionId:(NSString *)transactionId
+     transactionId:(NSString * _Nullable)transactionId
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject {
     [_impl requestMtuWithDeviceId:deviceId mtu:(NSInteger)mtu transactionId:transactionId resolve:resolve reject:reject];

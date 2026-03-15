@@ -30,5 +30,21 @@ target 'BlePlxExample' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Force linker to include all ObjC classes from static libs.
+    # Without this, TurboModule classes (like BlePlx) that are only
+    # referenced via NSClassFromString get dead-stripped by the linker.
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |config|
+          flags = config.build_settings['OTHER_LDFLAGS'] || ['$(inherited)']
+          unless flags.include?('-ObjC')
+            flags << '-ObjC'
+            config.build_settings['OTHER_LDFLAGS'] = flags
+          end
+        end
+      end
+      aggregate_target.user_project.save
+    end
   end
 end
