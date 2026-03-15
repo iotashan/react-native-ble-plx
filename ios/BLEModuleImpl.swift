@@ -2,23 +2,18 @@ import Foundation
 @preconcurrency import CoreBluetooth
 
 /// Protocol for the event emitter (ObjC++ BlePlx module)
+/// Uses typed emit methods matching the Codegen-generated NativeBlePlxSpecBase
 @objc public protocol BLEEventEmitter: AnyObject {
-    func sendEvent(withName name: String, body: Any?)
-}
-
-// MARK: - Event names
-
-private enum EventName {
-    static let scanResult = "onScanResult"
-    static let connectionStateChange = "onConnectionStateChange"
-    static let characteristicValueUpdate = "onCharacteristicValueUpdate"
-    static let stateChange = "onStateChange"
-    static let restoreState = "onRestoreState"
-    static let error = "onError"
-    static let bondStateChange = "onBondStateChange"
-    static let connectionEvent = "onConnectionEvent"
-    static let l2capData = "onL2CAPData"
-    static let l2capClose = "onL2CAPClose"
+    func emitOnScanResult(_ value: NSDictionary)
+    func emitOnConnectionStateChange(_ value: NSDictionary)
+    func emitOnCharacteristicValueUpdate(_ value: NSDictionary)
+    func emitOnStateChange(_ value: NSDictionary)
+    func emitOnRestoreState(_ value: NSDictionary)
+    func emitOnError(_ value: NSDictionary)
+    func emitOnBondStateChange(_ value: NSDictionary)
+    func emitOnConnectionEvent(_ value: NSDictionary)
+    func emitOnL2CAPData(_ value: NSDictionary)
+    func emitOnL2CAPClose(_ value: NSDictionary)
 }
 
 // MARK: - BLEModuleImpl
@@ -27,42 +22,41 @@ private enum EventName {
 /// All methods are called from the ObjC++ layer and delegate to BLEActor.
 @objc public class BLEModuleImpl: NSObject {
 
-    private var eventEmitterAdapter: EventEmitterAdapter?
-    private var eventEmitter: BLEEventEmitter? { eventEmitterAdapter }
+    private weak var eventEmitter: BLEEventEmitter?
     private var actor: BLEActor?
 
-    @objc public init(eventEmitter: RCTEventEmitter) {
-        self.eventEmitterAdapter = EventEmitterAdapter(emitter: eventEmitter)
+    @objc public init(eventEmitter: BLEEventEmitter) {
+        self.eventEmitter = eventEmitter
         super.init()
     }
 
     @objc public static func supportedEventNames() -> [String] {
         return [
-            EventName.scanResult,
-            EventName.connectionStateChange,
-            EventName.characteristicValueUpdate,
-            EventName.stateChange,
-            EventName.restoreState,
-            EventName.error,
-            EventName.bondStateChange,
-            EventName.connectionEvent,
-            EventName.l2capData,
-            EventName.l2capClose,
+            "onScanResult",
+            "onConnectionStateChange",
+            "onCharacteristicValueUpdate",
+            "onStateChange",
+            "onRestoreState",
+            "onError",
+            "onBondStateChange",
+            "onConnectionEvent",
+            "onL2CAPData",
+            "onL2CAPClose",
         ]
     }
 
     // MARK: - Private helpers
 
-    private func sendEvent(_ name: String, body: Any?) {
-        eventEmitter?.sendEvent(withName: name, body: body)
+    private func emitError(_ dict: [String: Any]) {
+        eventEmitter?.emitOnError(dict as NSDictionary)
     }
 
-    private func rejectWithError(_ reject: @escaping RCTPromiseRejectBlock, error: BleError) {
+    private func rejectWithError(_ reject: @escaping @Sendable (String?, String?, Error?) -> Void, error: BleError) {
         reject(String(error.code.rawValue), error.message, nil)
-        sendEvent(EventName.error, body: error.toDictionary())
+        emitError(error.toDictionary())
     }
 
-    private func rejectWithError(_ reject: @escaping RCTPromiseRejectBlock, error: Error) {
+    private func rejectWithError(_ reject: @escaping @Sendable (String?, String?, Error?) -> Void, error: Error) {
         if let bleError = error as? BleError {
             rejectWithError(reject, error: bleError)
         } else {
@@ -75,14 +69,14 @@ private enum EventName {
 
     @objc public func createClient(
         restoreStateIdentifier: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
-        let emitter = self
+        let emitter = self.eventEmitter
 
         actor = BLEActor(
             onScanResult: { [weak emitter] snapshot in
-                emitter?.sendEvent(EventName.scanResult, body: snapshot.toDictionary())
+                emitter?.emitOnScanResult(snapshot.toDictionary() as NSDictionary)
             },
             onConnectionStateChange: { [weak emitter] deviceId, state, error in
                 var body: [String: Any] = [
@@ -91,7 +85,7 @@ private enum EventName {
                 ]
                 body["errorCode"] = error?.code.rawValue
                 body["errorMessage"] = error?.message
-                emitter?.sendEvent(EventName.connectionStateChange, body: body)
+                emitter?.emitOnConnectionStateChange(body as NSDictionary)
             },
             onCharacteristicValueUpdate: { [weak emitter] deviceId, serviceUuid, charUuid, value, transactionId in
                 var body: [String: Any] = [
@@ -101,23 +95,23 @@ private enum EventName {
                     "value": value ?? "",
                 ]
                 body["transactionId"] = transactionId
-                emitter?.sendEvent(EventName.characteristicValueUpdate, body: body)
+                emitter?.emitOnCharacteristicValueUpdate(body as NSDictionary)
             },
             onStateChange: { [weak emitter] state in
-                emitter?.sendEvent(EventName.stateChange, body: ["state": state])
+                emitter?.emitOnStateChange(["state": state] as NSDictionary)
             },
             onRestoreState: { [weak emitter] devices in
                 let deviceDicts = devices.map { $0.toDictionary() }
-                emitter?.sendEvent(EventName.restoreState, body: ["devices": deviceDicts])
+                emitter?.emitOnRestoreState(["devices": deviceDicts] as NSDictionary)
             },
             onError: { [weak emitter] error in
-                emitter?.sendEvent(EventName.error, body: error.toDictionary())
+                emitter?.emitOnError(error.toDictionary() as NSDictionary)
             },
             onL2CAPData: { [weak emitter] channelId, data in
-                emitter?.sendEvent(EventName.l2capData, body: ["channelId": channelId, "data": data])
+                emitter?.emitOnL2CAPData(["channelId": channelId, "data": data] as NSDictionary)
             },
             onL2CAPClose: { [weak emitter] channelId, error in
-                emitter?.sendEvent(EventName.l2capClose, body: ["channelId": channelId, "error": error as Any])
+                emitter?.emitOnL2CAPClose(["channelId": channelId, "error": error as Any] as NSDictionary)
             }
         )
 
@@ -128,8 +122,8 @@ private enum EventName {
     }
 
     @objc public func destroyClient(
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             await actor?.destroyClient()
@@ -148,8 +142,8 @@ private enum EventName {
     // MARK: - State
 
     @objc public func state(
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             let state = await actor?.state() ?? "Unknown"
@@ -172,8 +166,8 @@ private enum EventName {
     }
 
     @objc public func stopDeviceScan(
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             await actor?.stopDeviceScan()
@@ -186,8 +180,8 @@ private enum EventName {
     @objc public func connectToDevice(
         deviceId: String,
         options: NSDictionary?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         let opts = options as? [String: Any]
 
@@ -206,8 +200,8 @@ private enum EventName {
 
     @objc public func cancelDeviceConnection(
         deviceId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -224,8 +218,8 @@ private enum EventName {
 
     @objc public func isDeviceConnected(
         deviceId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -245,8 +239,8 @@ private enum EventName {
     @objc public func discoverAllServicesAndCharacteristics(
         deviceId: String,
         transactionId: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -268,8 +262,8 @@ private enum EventName {
         serviceUuid: String,
         characteristicUuid: String,
         transactionId: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -296,8 +290,8 @@ private enum EventName {
         value: String,
         withResponse: Bool,
         transactionId: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -344,7 +338,7 @@ private enum EventName {
                 )
             } catch {
                 if let bleError = error as? BleError {
-                    sendEvent(EventName.error, body: bleError.toDictionary())
+                    emitError(bleError.toDictionary())
                 }
             }
         }
@@ -354,8 +348,8 @@ private enum EventName {
 
     @objc public func getMtu(
         deviceId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -374,8 +368,8 @@ private enum EventName {
         deviceId: String,
         mtu: NSInteger,
         transactionId: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -396,8 +390,8 @@ private enum EventName {
         deviceId: String,
         txPhy: NSInteger,
         rxPhy: NSInteger,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         // PHY selection is not available on iOS
         Task {
@@ -416,8 +410,8 @@ private enum EventName {
 
     @objc public func readPhy(
         deviceId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         reject(String(BleErrorCode.operationStartFailed.rawValue),
                "PHY reading is not supported on iOS", nil)
@@ -428,8 +422,8 @@ private enum EventName {
     @objc public func requestConnectionPriority(
         deviceId: String,
         priority: NSInteger,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         // Connection priority is an Android-only concept
         reject(String(BleErrorCode.operationStartFailed.rawValue),
@@ -441,8 +435,8 @@ private enum EventName {
     @objc public func openL2CAPChannel(
         deviceId: String,
         psm: NSInteger,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -460,8 +454,8 @@ private enum EventName {
     @objc public func writeL2CAPChannel(
         channelId: NSInteger,
         data: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -481,8 +475,8 @@ private enum EventName {
 
     @objc public func closeL2CAPChannel(
         channelId: NSInteger,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             do {
@@ -500,8 +494,8 @@ private enum EventName {
     // MARK: - Bonding (Limited on iOS)
 
     @objc public func getBondedDevices(
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         // iOS doesn't expose bonded device list via CoreBluetooth
         resolve([])
@@ -510,8 +504,8 @@ private enum EventName {
     // MARK: - Authorization
 
     @objc public func getAuthorizationStatus(
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         if #available(iOS 13.1, *) {
             switch CBManager.authorization {
@@ -536,8 +530,8 @@ private enum EventName {
 
     @objc public func cancelTransaction(
         transactionId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
+        resolve: @escaping @Sendable (Any?) -> Void,
+        reject: @escaping @Sendable (String?, String?, Error?) -> Void
     ) {
         Task {
             await actor?.cancelTransaction(transactionId)
@@ -546,18 +540,3 @@ private enum EventName {
     }
 }
 
-// MARK: - RCTEventEmitter adapter
-
-/// Wraps an RCTEventEmitter (from ObjC) to conform to BLEEventEmitter.
-/// Since RCTEventEmitter is an ObjC class, we use a thin wrapper.
-class EventEmitterAdapter: BLEEventEmitter {
-    private weak var emitter: RCTEventEmitter?
-
-    init(emitter: RCTEventEmitter) {
-        self.emitter = emitter
-    }
-
-    func sendEvent(withName name: String, body: Any?) {
-        emitter?.sendEvent(withName: name, body: body)
-    }
-}

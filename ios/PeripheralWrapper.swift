@@ -6,7 +6,7 @@ import Foundation
 /// Per-peripheral actor that owns the CBPeripheral, its delegate, and a GATT operation queue.
 /// Uses a custom executor pinned to the CB dispatch queue for thread safety.
 actor PeripheralWrapper {
-    let queue: DispatchQueue
+    let queue: DispatchSerialQueue
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
     private let peripheral: CBPeripheral
@@ -19,7 +19,7 @@ actor PeripheralWrapper {
         delegate.characteristicUpdateStream
     }
 
-    init(peripheral: CBPeripheral, queue: DispatchQueue) {
+    init(peripheral: CBPeripheral, queue: DispatchSerialQueue) {
         self.peripheral = peripheral
         self.queue = queue
         self.deviceId = peripheral.identifier.uuidString

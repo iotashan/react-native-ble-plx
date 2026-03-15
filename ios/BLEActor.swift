@@ -6,7 +6,7 @@ import Foundation
 /// Central manager actor with custom executor pinned to the CoreBluetooth queue.
 /// All CBCentralManager and CBPeripheral interactions happen on this queue.
 actor BLEActor {
-    let queue = DispatchQueue(label: "com.bleplx.ble")
+    let queue = DispatchSerialQueue(label: "com.bleplx.ble")
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
     private var centralManager: CBCentralManager!

@@ -9,10 +9,10 @@ actor ScanManager {
     private var isScanning = false
     private var scanTask: Task<Void, Never>?
 
-    let queue: DispatchQueue
+    let queue: DispatchSerialQueue
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    init(queue: DispatchQueue) {
+    init(queue: DispatchSerialQueue) {
         self.queue = queue
     }
 

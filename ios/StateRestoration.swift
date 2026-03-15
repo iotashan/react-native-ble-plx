@@ -56,10 +56,10 @@ actor StateRestoration {
     private var bufferedRestorationData: [RestorationState] = []
     private var hasJSSubscribed = false
 
-    let queue: DispatchQueue
+    let queue: DispatchSerialQueue
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    init(queue: DispatchQueue) {
+    init(queue: DispatchSerialQueue) {
         self.queue = queue
     }
 

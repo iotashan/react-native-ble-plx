@@ -190,6 +190,9 @@ class BleManagerWrapper(context: Context) : BleManager(context) {
             trySend(data.value ?: ByteArray(0))
         }
 
+        // Register notification callback before enabling
+        setNotificationCallback(char).with(callback)
+
         // Enable notifications or indications
         val props = char.properties
         val hasIndicate = props and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
@@ -197,14 +200,12 @@ class BleManagerWrapper(context: Context) : BleManager(context) {
 
         if (hasIndicate) {
             enableIndications(char)
-                .with(callback)
                 .fail { _, status ->
                     close(GattException(status, "Enable indications failed for $characteristicUuid"))
                 }
                 .enqueue()
         } else if (hasNotify) {
             enableNotifications(char)
-                .with(callback)
                 .fail { _, status ->
                     close(GattException(status, "Enable notifications failed for $characteristicUuid"))
                 }
