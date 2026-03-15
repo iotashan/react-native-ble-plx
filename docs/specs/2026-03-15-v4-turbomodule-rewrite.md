@@ -179,6 +179,23 @@ export const BleErrorCode = {
   // Platform
   ManagerNotInitialized: 400,
   ManagerDestroyed: 401,
+
+  // Bonding/Pairing
+  BondingFailed: 500,
+  BondLost: 501,
+  PairingRejected: 502,
+
+  // L2CAP
+  L2CAPChannelFailed: 600,
+  L2CAPChannelClosed: 601,
+
+  // PHY
+  PhyNegotiationFailed: 700,
+
+  // Scan
+  ScanFailed: 800,              // nativeCode = Android ScanCallback.SCAN_FAILED_* (1-6)
+  ScanThrottled: 801,
+
   UnknownError: 999,
 } as const;
 ```
@@ -210,7 +227,114 @@ interface BleError {
 
 ---
 
-## 5. Android Implementation Details
+## 5. Connection State Machine
+
+```
+                    ┌──────────────┐
+         scan found │  Discovered  │
+                    └──────┬───────┘
+                           │ connectToDevice()
+                           ▼
+                    ┌──────────────┐
+                    │  Connecting  │──── timeout/error ────┐
+                    └──────┬───────┘                       │
+                           │ GATT connected                │
+                           ▼                               │
+                    ┌──────────────┐                       │
+                    │  Connected   │──── GATT error ──────┤
+                    └──────┬───────┘                       │
+                           │ cancelDeviceConnection()      │
+                           ▼                               │
+                    ┌───────────────┐                      │
+                    │ Disconnecting │                      │
+                    └──────┬────────┘                      │
+                           │                               │
+                           ▼                               ▼
+                    ┌──────────────┐
+                    │ Disconnected │
+                    └──────────────┘
+```
+
+**Retry policy:** Configurable via `connectToDevice(deviceId, { retries: 3, retryDelay: 1000 })`.
+- `retries`: max connection attempts (default 1 = no retry)
+- `retryDelay`: ms between attempts (default 1000)
+- Retryable errors: GATT 133, connection timeout. Non-retryable: permission denied, device not found, user cancelled.
+- `isRetryable` field in `BleError` tells the caller whether automatic retry was applicable.
+
+**State transitions are emitted as events** via the Codegen typed event emitter, not polled.
+
+---
+
+## 5a. Codegen Spec (`NativeBleModule.ts`)
+
+The Codegen spec is the contract between JS and native. Key shape:
+
+```typescript
+import type { TurboModule } from 'react-native';
+import { TurboModuleRegistry } from 'react-native';
+
+export interface Spec extends TurboModule {
+  // Lifecycle
+  createClient(restoreStateIdentifier?: string): Promise<void>;
+  destroyClient(): Promise<void>;
+
+  // State
+  state(): Promise<string>;
+  onStateChange(callback: (state: string) => void): void;
+
+  // Scanning
+  startDeviceScan(uuids: string[] | null, options: Object | null): void;
+  stopDeviceScan(): Promise<void>;
+
+  // Connection
+  connectToDevice(deviceId: string, options?: Object): Promise<Object>;
+  cancelDeviceConnection(deviceId: string): Promise<Object>;
+  isDeviceConnected(deviceId: string): Promise<boolean>;
+
+  // Discovery
+  discoverAllServicesAndCharacteristicsForDevice(deviceId: string, transactionId?: string): Promise<Object>;
+
+  // Read/Write
+  readCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, transactionId?: string): Promise<Object>;
+  writeCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, value: string, withResponse: boolean, transactionId?: string): Promise<Object>;
+
+  // Monitor
+  monitorCharacteristicForDevice(deviceId: string, serviceUUID: string, characteristicUUID: string, transactionId?: string, options?: Object): void;
+
+  // MTU / PHY / Connection Parameters
+  requestMTUForDevice(deviceId: string, mtu: number, transactionId?: string): Promise<Object>;
+  requestPhy(deviceId: string, txPhy: number, rxPhy: number): Promise<Object>;
+  readPhy(deviceId: string): Promise<Object>;
+  requestConnectionParameters(deviceId: string, params: Object): Promise<Object>;
+
+  // L2CAP (iOS only — Android rejects with OperationNotSupported)
+  openL2CAPChannel(deviceId: string, psm: number): Promise<Object>;
+
+  // Bonding
+  getBondedDevices(): Promise<Object[]>;
+
+  // Authorization (iOS)
+  getAuthorizationStatus(): Promise<string>;
+
+  // Cancellation
+  cancelTransaction(transactionId: string): Promise<void>;
+
+  // Events (typed, emitted via Codegen event emitter)
+  // - ScanEvent: { device: Object }
+  // - ConnectionStateEvent: { deviceId: string, state: string, error?: Object }
+  // - CharacteristicValueEvent: { deviceId: string, serviceUUID: string, characteristicUUID: string, value: string, transactionId?: string }
+  // - StateChangeEvent: { state: string }
+  // - RestoreStateEvent: { devices: Object[] }
+}
+
+export default TurboModuleRegistry.getEnforcing<Spec>('BlePlx');
+```
+
+This generates the native bindings. The actual event types are defined via the [typed native module events](https://reactnative.dev/docs/0.79/the-new-architecture/native-modules-custom-events) pattern.
+
+---
+
+## 6. Android Implementation Details
 
 ### Dependencies
 
