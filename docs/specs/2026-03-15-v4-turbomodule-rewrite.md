@@ -654,6 +654,12 @@ func monitorCharacteristic(_ characteristic: CBCharacteristic) -> AsyncStream<Da
 ### State restoration
 
 ```swift
+// BOOTSTRAP TIMING: On background relaunch triggered by Bluetooth state restoration,
+// the native .mm module (or Expo plugin AppDelegate extension) must eagerly instantiate
+// CBCentralManager with the restore identifier during application(_:willFinishLaunchingWithOptions:)
+// — BEFORE the JS bridge is ready. Buffer the willRestoreState payload until JS calls
+// createClient() and subscribes to onRestoreState.
+//
 // IMPORTANT: willRestoreState fires BEFORE centralManagerDidUpdateState.
 // Do NOT assume Bluetooth state is ready here. Only re-attach delegates and store peripheral refs.
 // State restoration only works for system-terminated apps — force-quit by user disables it.
