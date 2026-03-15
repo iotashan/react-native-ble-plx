@@ -51,6 +51,14 @@ actor GATTOperationQueue {
                     return
                 }
 
+                // Re-check cancellation at execution time — cancel may have arrived
+                // between enqueue and when this work block actually starts running.
+                if let txId = transactionId, await self.isCancelled(txId) {
+                    continuation.resume(throwing: BleError(code: .operationCancelled, message: "Transaction \(txId) was cancelled"))
+                    await self.operationFinished()
+                    return
+                }
+
                 let effectiveTimeout = timeout ?? self.defaultTimeout
 
                 do {
@@ -91,6 +99,11 @@ actor GATTOperationQueue {
     /// Cancel a pending or active operation by transaction ID
     func cancelTransaction(_ transactionId: String) {
         cancelledTransactions.insert(transactionId)
+    }
+
+    /// Check if a transaction has been cancelled
+    func isCancelled(_ transactionId: String) -> Bool {
+        return cancelledTransactions.contains(transactionId)
     }
 
     private func operationFinished() {

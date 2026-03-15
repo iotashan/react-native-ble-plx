@@ -20,17 +20,21 @@ final class CentralManagerDelegate: NSObject, CBCentralManagerDelegate, Sendable
     private let scanSubject = AsyncStreamBridge<ScanResultSnapshot>()
     private let connectionSubject = AsyncStreamBridge<ConnectionResult>()
     private let disconnectionSubject = AsyncStreamBridge<ConnectionResult>()
-    private let restorationSubject = AsyncStreamBridge<[String: Any]>()
+    private let restorationSubject = AsyncStreamBridge<RestorationState>()
 
     /// Pending connection continuations keyed by peripheral UUID
     private let pendingConnections = LockedDictionary<UUID, CheckedContinuation<Void, Error>>()
+
+    /// Raw restoration dicts buffered for same-queue access by BLEActor/StateRestoration.
+    /// Only accessed from the CB queue — not Sendable, not crossed across isolation domains.
+    private let rawRestorationDicts = LockedBox<[[String: Any]]>([])
 
     // MARK: - Streams
 
     var stateStream: AsyncStream<CBManagerState> { stateSubject.stream }
     var scanStream: AsyncStream<ScanResultSnapshot> { scanSubject.stream }
     var disconnectionStream: AsyncStream<ConnectionResult> { disconnectionSubject.stream }
-    var restorationStream: AsyncStream<[String: Any]> { restorationSubject.stream }
+    var restorationStream: AsyncStream<RestorationState> { restorationSubject.stream }
 
     // MARK: - Connection management
 
@@ -98,8 +102,20 @@ final class CentralManagerDelegate: NSObject, CBCentralManagerDelegate, Sendable
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        // willRestoreState fires BEFORE didUpdateState
-        restorationSubject.yield(dict)
+        // willRestoreState fires BEFORE didUpdateState.
+        // Store the raw dict for same-queue access (peripherals are not Sendable).
+        var current = rawRestorationDicts.value
+        current.append(dict)
+        rawRestorationDicts.value = current
+        // Send the Sendable metadata through the stream for cross-actor signaling.
+        restorationSubject.yield(RestorationState(from: dict))
+    }
+
+    /// Consume buffered raw restoration dicts. Must be called from the CB queue.
+    func consumeRawRestorationDicts() -> [[String: Any]] {
+        let dicts = rawRestorationDicts.value
+        rawRestorationDicts.value = []
+        return dicts
     }
 
     @available(iOS 13.0, *)

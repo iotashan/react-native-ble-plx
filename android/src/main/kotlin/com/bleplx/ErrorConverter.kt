@@ -107,6 +107,33 @@ object ErrorConverter {
                 operation = operation,
                 gattStatus = status
             )
+            // GATT_CONN_TERMINATE_LOCAL_HOST (0x16 = 22)
+            0x16 -> BleErrorInfo(
+                code = DEVICE_DISCONNECTED,
+                message = "Connection terminated by local host (GATT 0x16)",
+                isRetryable = true,
+                deviceId = deviceId,
+                operation = operation,
+                gattStatus = status
+            )
+            // GATT_CONN_LMP_TIMEOUT (0x22 = 34)
+            0x22 -> BleErrorInfo(
+                code = DEVICE_CONNECTION_FAILED,
+                message = "Connection failed - LMP timeout (GATT 0x22)",
+                isRetryable = true,
+                deviceId = deviceId,
+                operation = operation,
+                gattStatus = status
+            )
+            // GATT_CONN_FAIL_ESTABLISH (0x3E = 62)
+            0x3E -> BleErrorInfo(
+                code = DEVICE_CONNECTION_FAILED,
+                message = "Connection failed to establish (GATT 0x3E)",
+                isRetryable = true,
+                deviceId = deviceId,
+                operation = operation,
+                gattStatus = status
+            )
             // GATT_INSUFFICIENT_AUTHENTICATION
             0x05 -> BleErrorInfo(
                 code = BLUETOOTH_UNAUTHORIZED,

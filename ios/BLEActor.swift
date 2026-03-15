@@ -103,14 +103,18 @@ actor BLEActor {
 
         // Monitor restoration
         restorationTask = Task { [weak self, delegateHandler] in
-            for await dict in delegateHandler.restorationStream {
+            for await _ in delegateHandler.restorationStream {
                 guard let self = self else { break }
-                let wrappers = await self.stateRestoration.handleRestoration(dict: dict) { peripheral in
-                    PeripheralWrapper(peripheral: peripheral, queue: self.queue)
-                }
-                for wrapper in wrappers {
-                    let uuid = UUID(uuidString: wrapper.deviceId)!
-                    await self.storePeripheral(uuid, wrapper: wrapper)
+                // Consume the raw dicts from the delegate (same CB queue — no Sendable crossing).
+                let rawDicts = delegateHandler.consumeRawRestorationDicts()
+                for dict in rawDicts {
+                    let wrappers = await self.stateRestoration.handleRestoration(dict: dict) { peripheral in
+                        PeripheralWrapper(peripheral: peripheral, queue: self.queue)
+                    }
+                    for wrapper in wrappers {
+                        let uuid = UUID(uuidString: wrapper.deviceId)!
+                        await self.storePeripheral(uuid, wrapper: wrapper)
+                    }
                 }
                 let snapshots = await self.stateRestoration.getRestoredDeviceInfos()
                 self.onRestoreState(snapshots)

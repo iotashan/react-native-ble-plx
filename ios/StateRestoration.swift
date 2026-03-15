@@ -8,6 +8,43 @@ struct RestoredPeripheralInfo: Sendable {
     let name: String?
 }
 
+// MARK: - RestorationState
+
+/// Sendable replacement for the raw `[String: Any]` dictionary from willRestoreState.
+/// Parsed immediately in the delegate callback (CB queue isolation domain) so that
+/// no non-Sendable dictionary crosses actor boundaries.
+struct RestorationState: Sendable {
+    let peripheralIdentifiers: [UUID]
+    let scanServiceUUIDs: [String]?
+    let scanOptions: [String: Bool]?
+
+    init(from dict: [String: Any]) {
+        if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
+            self.peripheralIdentifiers = peripherals.map { $0.identifier }
+        } else {
+            self.peripheralIdentifiers = []
+        }
+
+        if let serviceUUIDs = dict[CBCentralManagerRestoredStateScanServicesKey] as? [CBUUID] {
+            self.scanServiceUUIDs = serviceUUIDs.map { $0.uuidString }
+        } else {
+            self.scanServiceUUIDs = nil
+        }
+
+        if let options = dict[CBCentralManagerRestoredStateScanOptionsKey] as? [String: Any] {
+            var boolOptions: [String: Bool] = [:]
+            for (key, value) in options {
+                if let boolValue = value as? Bool {
+                    boolOptions[key] = boolValue
+                }
+            }
+            self.scanOptions = boolOptions.isEmpty ? nil : boolOptions
+        } else {
+            self.scanOptions = nil
+        }
+    }
+}
+
 // MARK: - StateRestoration
 
 /// Handles CoreBluetooth state restoration for background BLE operations.
@@ -16,7 +53,7 @@ struct RestoredPeripheralInfo: Sendable {
 /// - Buffers restoration data until JS subscribes
 actor StateRestoration {
     private var restoredPeripherals: [UUID: CBPeripheral] = [:]
-    private var bufferedRestorationData: [[String: Any]] = []
+    private var bufferedRestorationData: [RestorationState] = []
     private var hasJSSubscribed = false
 
     let queue: DispatchQueue
@@ -44,15 +81,15 @@ actor StateRestoration {
             }
         }
 
-        // Buffer the restoration data for when JS subscribes
-        bufferedRestorationData.append(dict)
+        // Buffer the parsed (Sendable) restoration data for when JS subscribes
+        bufferedRestorationData.append(RestorationState(from: dict))
 
         return wrappers
     }
 
     /// Called when JS subscribes to restoration events.
     /// Returns any buffered data, then clears the buffer.
-    func getBufferedRestorationData() -> [[String: Any]] {
+    func getBufferedRestorationData() -> [RestorationState] {
         hasJSSubscribed = true
         let data = bufferedRestorationData
         bufferedRestorationData.removeAll()

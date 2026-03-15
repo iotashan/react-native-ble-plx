@@ -25,6 +25,12 @@ import kotlin.coroutines.resumeWithException
  *
  * Caches discovered characteristics in a ConcurrentHashMap for fast lookup.
  * Exposes suspend functions for GATT operations.
+ *
+ * Note: Nordic BLE Library does not support cancellation of enqueued GATT operations.
+ * When a transaction is cancelled from JS, the wrapping coroutine is cancelled but the
+ * underlying GATT operation continues to completion on the device. The response is discarded.
+ * This is a known limitation — BLE operations are atomic at the protocol level and cannot be
+ * interrupted once submitted to the Bluetooth stack.
  */
 class BleManagerWrapper(context: Context) : BleManager(context) {
 

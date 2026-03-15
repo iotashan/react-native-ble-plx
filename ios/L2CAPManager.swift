@@ -66,10 +66,16 @@ final class L2CAPChannelWrapper: NSObject, StreamDelegate, @unchecked Sendable {
     }
 
     func close() {
-        inputStream.close()
-        outputStream.close()
-        inputStream.remove(from: .current, forMode: .default)
-        outputStream.remove(from: .current, forMode: .default)
+        // Dispatch stream unschedule/close to the same RunLoop thread that scheduled them.
+        // Calling remove(from: .current) from a different thread is a no-op at best,
+        // and a race at worst.
+        runLoopQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.inputStream.remove(from: .current, forMode: .default)
+            self.outputStream.remove(from: .current, forMode: .default)
+            self.inputStream.close()
+            self.outputStream.close()
+        }
         dataSubject.finish()
         closeSubject.finish()
     }
