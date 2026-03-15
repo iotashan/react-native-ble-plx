@@ -19,9 +19,11 @@ const config = {
   watchFolders: [libraryRoot],
   resolver: {
     // Make sure Metro can resolve modules from the library root
+    // Only resolve from the example app's node_modules — the library root
+    // should NOT have its own node_modules installed (prevents duplicate
+    // react-native versions causing TurboModule resolution failures).
     nodeModulesPaths: [
       exampleNodeModules,
-      path.resolve(libraryRoot, 'node_modules'),
     ],
     // Force react and react-native to always resolve from the example app's
     // node_modules. Without this, files under libraryRoot (e.g. src/) would
