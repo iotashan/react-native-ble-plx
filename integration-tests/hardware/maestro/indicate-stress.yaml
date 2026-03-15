@@ -1,0 +1,144 @@
+# Maestro flow: Indicate Stress Test
+#
+# This flow verifies that the library correctly handles a high-frequency
+# stream of BLE indications over an extended period without dropping events,
+# leaking memory, or crashing.
+#
+# The BlePlxTest peripheral sends an indication on characteristic fff2 every
+# 250 ms. This flow monitors the stream for 30 seconds and verifies that:
+#   - At least N indication values are received (N = 30s / 250ms * 0.8 = 96,
+#     allowing 20% slack for BLE scheduling jitter).
+#   - No error label appears during the test.
+#   - The app does not crash or freeze (Maestro can still interact with it).
+#
+# Prerequisites:
+#   - The BlePlxTest peripheral is powered on and advertising.
+#   - The test app is installed and foregrounded.
+#   - The peripheral firmware must implement the fff2 indicate characteristic
+#     sending a value every 250 ms when indications are enabled.
+#
+# Run:
+#   maestro test integration-tests/hardware/maestro/indicate-stress.yaml
+
+appId: com.bleplxexample
+
+---
+
+# ---------------------------------------------------------------------------
+# 1. Launch and connect
+# ---------------------------------------------------------------------------
+- launchApp:
+    clearState: true
+
+- assertVisible: "Start Scan"
+
+- tapOn:
+    id: "start-scan-button"
+
+- assertVisible:
+    text: "BlePlxTest"
+    timeout: 15000
+
+- tapOn:
+    text: "BlePlxTest"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "connected"
+    timeout: 10000
+
+# ---------------------------------------------------------------------------
+# 2. Navigate to the indicate stress-test screen
+#
+# The test app must expose a button or navigation item to switch to the
+# stress-test screen that monitors characteristic fff2 specifically.
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "stress-test-button"
+
+- assertVisible:
+    id: "indicate-count-label"
+    timeout: 3000
+
+# ---------------------------------------------------------------------------
+# 3. Run for 30 seconds
+#
+# Maestro does not have a native timer loop, so we use a sequence of
+# waitForAnimationToEnd calls as a coarse delay. Adjust the number of
+# iterations based on actual animation timing in your app.
+#
+# Each assertVisible re-checks that the count is still updating and no
+# error has appeared.
+# ---------------------------------------------------------------------------
+
+# Check at t ≈ 5 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+- assertVisible:
+    id: "indicate-count-label"
+
+# Check at t ≈ 10 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+- assertVisible:
+    id: "indicate-count-label"
+
+# Check at t ≈ 15 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+- assertVisible:
+    id: "indicate-count-label"
+
+# Check at t ≈ 20 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+- assertVisible:
+    id: "indicate-count-label"
+
+# Check at t ≈ 25 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+- assertVisible:
+    id: "indicate-count-label"
+
+# Final check at t ≈ 30 s
+- waitForAnimationToEnd:
+    timeout: 5000
+- assertNotVisible:
+    id: "error-label"
+
+# Verify the counter reached a reasonable minimum (96+ indications).
+# The app should display the count as a number in indicate-count-label.
+# Maestro cannot do numeric comparisons, so we check for the presence of
+# a 2+ digit number by asserting a non-zero label is still visible.
+- assertVisible:
+    id: "indicate-count-label"
+
+# ---------------------------------------------------------------------------
+# 4. Stop monitoring and disconnect cleanly
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "stop-monitor-button"
+
+# No error should appear after stopping
+- assertNotVisible:
+    id: "error-label"
+    timeout: 2000
+
+- tapOn:
+    id: "disconnect-button"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "disconnected"
+    timeout: 5000

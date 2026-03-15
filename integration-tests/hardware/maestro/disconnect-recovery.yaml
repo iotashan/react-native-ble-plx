@@ -1,0 +1,109 @@
+# Maestro flow: Disconnect Recovery
+#
+# This flow verifies that the library correctly handles an unexpected
+# disconnection (e.g., the peripheral goes out of range or is powered off)
+# and that the app can re-connect successfully after recovery.
+#
+# Prerequisites:
+#   - The BlePlxTest peripheral is powered on initially.
+#   - The tester (or an automated relay) powers off the peripheral during
+#     the test to simulate an unexpected disconnection.
+#   - The test app is installed and foregrounded.
+#
+# Note: The "power off peripheral" step below is annotated as a manual action.
+# When running on a device farm with controllable hardware, replace the
+# instructional comment with the relevant relay/GPIO command.
+#
+# Run:
+#   maestro test integration-tests/hardware/maestro/disconnect-recovery.yaml
+
+appId: com.bleplxexample
+
+---
+
+# ---------------------------------------------------------------------------
+# 1. Launch and connect to the peripheral
+# ---------------------------------------------------------------------------
+- launchApp:
+    clearState: true
+
+- assertVisible: "Start Scan"
+
+- tapOn:
+    id: "start-scan-button"
+
+- assertVisible:
+    text: "BlePlxTest"
+    timeout: 15000
+
+- tapOn:
+    text: "BlePlxTest"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "connected"
+    timeout: 10000
+
+# ---------------------------------------------------------------------------
+# 2. Verify steady-state: receiving notifications
+# ---------------------------------------------------------------------------
+- assertVisible:
+    id: "char-value"
+    timeout: 5000
+
+# ---------------------------------------------------------------------------
+# 3. Simulate unexpected disconnection
+#
+# MANUAL STEP: power off the BlePlxTest peripheral now.
+# When using a BLE relay board, insert the relay-off command here, e.g.:
+#   - evalScript: ${relay.off('BlePlxTest')}
+# ---------------------------------------------------------------------------
+
+# The library should detect the link loss and fire onDeviceDisconnected.
+# The app displays the disconnected state.
+- assertVisible:
+    id: "connection-state-label"
+    text: "disconnected"
+    timeout: 15000
+
+# The app should also show an error label since this was unexpected
+- assertVisible:
+    id: "error-label"
+    timeout: 3000
+
+# ---------------------------------------------------------------------------
+# 4. Recovery: power on the peripheral and reconnect
+#
+# MANUAL STEP: power on the BlePlxTest peripheral now.
+# ---------------------------------------------------------------------------
+
+- tapOn:
+    id: "start-scan-button"
+
+- assertVisible:
+    text: "BlePlxTest"
+    timeout: 20000
+
+- tapOn:
+    text: "BlePlxTest"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "connected"
+    timeout: 10000
+
+# ---------------------------------------------------------------------------
+# 5. Verify notifications resume after re-connect
+# ---------------------------------------------------------------------------
+- assertVisible:
+    id: "char-value"
+    timeout: 5000
+
+# Clean disconnect
+- tapOn:
+    id: "disconnect-button"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "disconnected"
+    timeout: 5000

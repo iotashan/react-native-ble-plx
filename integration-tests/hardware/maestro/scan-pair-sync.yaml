@@ -1,0 +1,97 @@
+# Maestro flow: Scan → Pair → Sync
+#
+# This flow verifies the complete happy-path of discovering a BLE peripheral,
+# connecting to it, performing a write, and receiving a characteristic
+# notification.
+#
+# Prerequisites:
+#   - The BlePlxTest peripheral is powered on and advertising within range.
+#   - The test app is installed and foregrounded on the device under test.
+#   - See integration-tests/hardware/peripheral-firmware/README.md for firmware
+#     requirements.
+#   - See integration-tests/hardware/test-app/README.md for app setup.
+#
+# Run:
+#   maestro test integration-tests/hardware/maestro/scan-pair-sync.yaml
+
+appId: com.bleplxexample
+
+---
+
+# ---------------------------------------------------------------------------
+# 1. Launch the app fresh
+# ---------------------------------------------------------------------------
+- launchApp:
+    clearState: true
+
+# Wait for the scan screen to be visible
+- assertVisible: "Start Scan"
+
+# ---------------------------------------------------------------------------
+# 2. Start scanning for BLE devices
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "start-scan-button"
+
+# The scan should start — wait for our peripheral to appear in the list.
+# The peripheral advertises as "BlePlxTest".
+- waitForAnimationToEnd
+
+- assertVisible:
+    text: "BlePlxTest"
+    timeout: 15000  # Allow up to 15 s for the peripheral to appear
+
+# ---------------------------------------------------------------------------
+# 3. Connect to the peripheral
+# ---------------------------------------------------------------------------
+- tapOn:
+    text: "BlePlxTest"
+
+# Wait for the connection state label to show "connected"
+- assertVisible:
+    id: "connection-state-label"
+    text: "connected"
+    timeout: 10000
+
+# ---------------------------------------------------------------------------
+# 4. Discover services and verify the heart rate service UUID is shown
+# ---------------------------------------------------------------------------
+# The app should automatically discover services after connecting.
+# Verify the expected service UUID is displayed.
+- assertVisible:
+    text: "180D"
+    timeout: 5000
+
+# ---------------------------------------------------------------------------
+# 5. Write to the writable test characteristic (fff1)
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "write-button"
+
+# A successful write should not show an error
+- assertNotVisible:
+    id: "error-label"
+    timeout: 3000
+
+# ---------------------------------------------------------------------------
+# 6. Verify a notification is received from the heart rate characteristic
+# ---------------------------------------------------------------------------
+# The peripheral sends HR notifications at 1 Hz.
+# Wait for the characteristic value label to be non-empty.
+- assertVisible:
+    id: "char-value"
+    timeout: 5000
+
+# The value should be a valid base64-encoded HR measurement (non-empty)
+# Maestro does not support regex assertions, so we just check visibility.
+
+# ---------------------------------------------------------------------------
+# 7. Disconnect
+# ---------------------------------------------------------------------------
+- tapOn:
+    id: "disconnect-button"
+
+- assertVisible:
+    id: "connection-state-label"
+    text: "disconnected"
+    timeout: 5000
