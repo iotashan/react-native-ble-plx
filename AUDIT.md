@@ -140,6 +140,34 @@ Global JVM-wide setting that overwrites any other library's error handler.
 
 `BlePlxModule.java:413` sends `DisconnectionEvent` with `null` error for both normal and abnormal disconnects. GATT error codes (e.g., GATT 133) go to `onErrorCallback` (which rejects the connect promise) but never to the disconnect event listener. Users calling `onDeviceDisconnected` can't distinguish clean disconnects from error-triggered ones.
 
+### 22. Strong delegate ownership causes lifecycle leak (iOS)
+
+`BlePlx.m` strongly retains `BleClientManager`, and the delegate is also `strong` — never nilled before teardown. Can cause late callbacks after invalidation.
+
+### 23. `createClient` not defensive against re-entry (iOS)
+
+Calling `createClient` twice overwrites `_manager` without invalidating the previous instance. The old adapter keeps running and emitting callbacks.
+
+### 24. Missing nil guards on `_manager` hang JS promises (iOS)
+
+After `destroyClient` sets `_manager = nil`, subsequent method calls message nil. ObjC nil-messaging silently does nothing, so `resolve`/`reject` never fires — JS promises hang forever.
+
+### 25. `invalidate` doesn't call `[super invalidate]` (iOS)
+
+`BlePlx.m:68` overrides `invalidate` without calling super. `RCTEventEmitter` base class cleanup (listener count reset, etc.) is skipped.
+
+---
+
+## Final Tally
+
+**25 issues total** found by 5 independent review agents (3 Claude + 2 Codex):
+- **5 critical** (thread safety x2, monitor cleanup, enable() broken, empty manifest)
+- **8 high** (scan leak, memory leak, permission crash, MTU, lifecycle leaks, re-entry, nil guards, state restoration)
+- **9 medium** (promise leaks, wrong types, JSON injection, static contamination, disconnect errors, etc.)
+- **3 low** (naming inconsistency, deprecated getValue(), ID precision)
+
+`BlePlxModule.java:413` sends `DisconnectionEvent` with `null` error for both normal and abnormal disconnects. GATT error codes (e.g., GATT 133) go to `onErrorCallback` (which rejects the connect promise) but never to the disconnect event listener. Users calling `onDeviceDisconnected` can't distinguish clean disconnects from error-triggered ones.
+
 ### 19. Promise double-resolution via `onDisposed` (iOS)
 
 Every Rx subscription has both completion handlers and `onDisposed` that tries to reject with "cancelled." Relies on fragile `SafePromise` flag (which itself is not thread-safe — see #2).
