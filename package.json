@@ -1,13 +1,13 @@
 {
   "name": "react-native-ble-plx",
-  "version": "3.5.1",
+  "version": "4.0.0-alpha.0",
   "packageManager": "yarn@1.22.22",
   "description": "React Native Bluetooth Low Energy library",
-  "main": "src/index",
-  "module": "src/index",
-  "types": "src/index.d.ts",
+  "main": "lib/commonjs/index",
+  "module": "lib/module/index",
+  "types": "lib/typescript/src/index.d.ts",
   "react-native": "src/index",
-  "source": "src/index",
+  "source": "src/index.ts",
   "files": [
     "src",
     "lib",
@@ -88,7 +88,6 @@
     "@release-it/conventional-changelog": "^5.0.0",
     "@types/jest": "^29.5.5",
     "@types/react": "^18.2.44",
-    "@types/react-native": "0.70.0",
     "@types/react-native-base64": "^0.2.2",
     "@typescript-eslint/parser": "^5.62.0",
     "babel-plugin-syntax-hermes-parser": "^0.15.1",
@@ -127,7 +126,7 @@
   },
   "peerDependencies": {
     "react": "*",
-    "react-native": "*"
+    "react-native": ">= 0.82.0"
   },
   "engines": {
     "node": ">= 18.0.0"
