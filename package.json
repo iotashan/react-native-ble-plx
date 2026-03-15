@@ -163,6 +163,14 @@
       }
     }
   },
+  "codegenConfig": {
+    "name": "NativeBlePlxSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "com.bleplx"
+    }
+  },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
