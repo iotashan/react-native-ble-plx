@@ -8,35 +8,6 @@
   },
   "overrides": [
     {
-      "files": ["src/**/*.js", "src/**/*.jsx", "__tests__/**/*.js", "__tests__/**/*.jsx", "integration-tests/**/*.js", "integration-tests/**/*.jsx"],
-      "parser": "hermes-eslint",
-      "extends": [
-        "plugin:react/recommended",
-        "plugin:flowtype/recommended",
-        "plugin:prettier/recommended",
-        "@react-native-community",
-        "eslint:recommended",
-        "plugin:jest/recommended",
-        "plugin:ft-flow/recommended"
-      ],
-      "plugins": ["ft-flow", "react", "react-native", "flowtype", "jest", "prettier"],
-      "rules": {
-        "ft-flow/define-flow-type": "off",
-        "ft-flow/use-flow-type": "off",
-        "flowtype/define-flow-type": "off",
-        "flowtype/no-types-missing-file-annotation": 0,
-        "semi": ["error", "never"],
-        "comma-dangle": ["error", "never"],
-        "react/display-name": 0,
-        "ft-flow/no-types-missing-file-annotation": 0,
-        "jest/no-export": 0
-      },
-      "globals": {
-        "$Keys": true,
-        "$Values": true
-      }
-    },
-    {
       "files": ["src/**/*.tsx", "src/**/*.ts", "src/**/*.d.ts", "__tests__/**/*.ts", "__tests__/**/*.tsx", "plugin/**/*.ts", "plugin/**/*.tsx"],
       "parser": "@typescript-eslint/parser",
       "extends": [
@@ -104,6 +75,9 @@
     },
     {
       "files": ["__tests__/**/*.ts", "__tests__/**/*.tsx"],
+      "parserOptions": {
+        "project": ["./tsconfig.tests.json"]
+      },
       "rules": {
         "@typescript-eslint/no-non-null-assertion": "off"
       }

@@ -3,6 +3,3 @@ node_modules/
 docs/**
 plugin/build
 lib/**
-src/index.d.ts
-src/*.js
-__tests__/*.js
