@@ -65,7 +65,7 @@ Background BLE with state restoration is **supported** (not dropped — it's a v
 
 ### JS/TS Layer
 
-- **TurboModule Codegen spec** (`NativeBleModule.ts`) defines the native interface — methods, typed events, and types. This generates native bindings automatically. **NOT** `RCTEventEmitter` — use the [typed native module events](https://reactnative.dev/docs/0.79/the-new-architecture/native-modules-custom-events) pattern from RN 0.79+.
+- **TurboModule Codegen spec** (`NativeBlePlx.ts`) defines the native interface — methods, typed events, and types. This generates native bindings automatically. **NOT** `RCTEventEmitter` — use the [typed native module events](https://reactnative.dev/docs/0.79/the-new-architecture/native-modules-custom-events) pattern from RN 0.79+.
 - **TypeScript types** using `as const` objects (not enums) for runtime values
 - **Event bridge** with backpressure and per-stream batching rules (see Event Batching section)
 - **Deterministic cancellation**: every operation has a timeout; every Promise resolves or rejects, never hangs
@@ -82,7 +82,8 @@ Background BLE with state restoration is **supported** (not dropped — it's a v
   - Provides consistent scan API across Android versions
   - BLE 5.0 extended advertising scan support
   - **Does NOT handle scan throttling automatically** — we must implement our own debouncing (Android 7+ limits to ~5 `startScan` calls per 30s; exceeding this silently returns zero results)
-- **Auto-MTU on connect**: Request MTU 517 during connection setup automatically (the #1 user-reported issue with current ble-plx is silent data truncation from the 23-byte default)
+- **Auto-MTU on connect**: Request MTU 517 during connection setup automatically (the #1 user-reported issue with current ble-plx is silent data truncation from the 23-byte default). **Android 14+ caveat:** The system automatically initiates MTU 517 on first connection. Calling `requestMtu` again can cause disconnects on some peripherals. Implementation must check `Build.VERSION.SDK_INT >= 34` and skip explicit MTU request if the system already negotiated ≥ 517.
+- **`neverForLocation` flag**: `BLUETOOTH_SCAN` permission must include `android:usesPermissionFlags="neverForLocation"` in manifest (unless the app derives location from BLE scans). Without this, apps still need Location permissions on Android 12+.
 - **Kotlin coroutines** for async operations (natural TurboModule Promise mapping)
 - **Thread-safe by design**: Nordic library handles GATT threading; coroutine dispatchers for our code
 - **Android 12+ permissions**: proper `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` runtime checks
@@ -275,7 +276,7 @@ interface BleError {
 
 ---
 
-## 5a. Codegen Spec (`NativeBleModule.ts`)
+## 5a. Codegen Spec (`NativeBlePlx.ts`)
 
 The Codegen spec is the contract between JS and native. File MUST be named `NativeBlePlx.ts` (prefix `Native` required by Codegen). All types MUST be defined inline (no imports from other files). Uses `CodegenTypes.EventEmitter<T>` for streaming data (callbacks are single-fire in Codegen).
 
@@ -377,11 +378,22 @@ export interface Spec extends TurboModule {
   state(): Promise<string>;
 
   // Scanning (scan throttle debouncing built-in)
-  startDeviceScan(uuids: ReadonlyArray<string> | null, optionsJson: string): void;
+  startDeviceScan(uuids: ReadonlyArray<string> | null, options: Readonly<{
+    scanMode?: number;           // Android: 0=opportunistic, 1=lowPower, 2=balanced, -1=lowLatency
+    callbackType?: number;       // Android: 1=allMatches, 2=firstMatch, 4=matchLost
+    legacyScan?: boolean;        // false = BLE 5.0 extended advertising
+    allowDuplicates?: boolean;   // iOS only
+  }> | null): void;
   stopDeviceScan(): Promise<void>;
 
   // Connection (auto-MTU 517 on Android)
-  connectToDevice(deviceId: string, optionsJson: string): Promise<DeviceInfo>;
+  connectToDevice(deviceId: string, options: Readonly<{
+    autoConnect?: boolean;       // Android: true=background, false=direct (default)
+    timeout?: number;            // Connection timeout in ms
+    retries?: number;            // Number of retry attempts (default 1)
+    retryDelay?: number;         // Ms between retries (default 1000)
+    requestMtu?: number;         // Auto-request MTU after connect (default 517 on Android, ignored on iOS)
+  }> | null): Promise<DeviceInfo>;
   cancelDeviceConnection(deviceId: string): Promise<DeviceInfo>;
   isDeviceConnected(deviceId: string): Promise<boolean>;
 
@@ -791,7 +803,7 @@ const channel = await manager.openL2CAPChannel(deviceId, 0x0080);
 ```
 react-native-ble-plx/
 ├── src/                          ← TypeScript API + TurboModule spec
-│   ├── NativeBleModule.ts        ← Codegen spec
+│   ├── NativeBlePlx.ts        ← Codegen spec
 │   ├── BleManager.ts             ← Main API class
 │   ├── Device.ts
 │   ├── Characteristic.ts
