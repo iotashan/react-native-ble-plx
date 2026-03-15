@@ -95,6 +95,9 @@
     },
     {
       "files": ["src/specs/**"],
+      "parserOptions": {
+        "project": ["./tsconfig.specs.json"]
+      },
       "rules": {
         "import/no-default-export": "off"
       }

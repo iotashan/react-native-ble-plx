@@ -1,5 +1,4 @@
-import type { TurboModule } from 'react-native'
-import type * as CodegenTypes from 'react-native/Libraries/Types/CodegenTypes'
+import type { TurboModule, CodegenTypes } from 'react-native'
 import { TurboModuleRegistry } from 'react-native'
 
 // All types must be inline — Codegen ignores imports from other files
