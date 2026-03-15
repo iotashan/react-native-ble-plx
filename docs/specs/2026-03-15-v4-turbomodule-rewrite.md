@@ -428,6 +428,9 @@ export interface Spec extends TurboModule {
   readonly onStateChange: CodegenTypes.EventEmitter<StateChangeEvent>;
   readonly onRestoreState: CodegenTypes.EventEmitter<RestoreStateEvent>;
   readonly onError: CodegenTypes.EventEmitter<BleErrorInfo>;
+  readonly onConnectionEvent: CodegenTypes.EventEmitter<Readonly<{ deviceId: string; event: string }>>;  // iOS 13+ connection events
+  readonly onL2CAPData: CodegenTypes.EventEmitter<Readonly<{ channelId: number; data: string }>>;        // L2CAP incoming data
+  readonly onL2CAPClose: CodegenTypes.EventEmitter<Readonly<{ channelId: number; error: string | null }>>;
 }
 
 export default TurboModuleRegistry.get<Spec>('NativeBlePlx');
@@ -444,6 +447,33 @@ export default TurboModuleRegistry.get<Spec>('NativeBlePlx');
 - `optionsJson` as string for complex options (avoids Codegen type limitations)
 
 **Device identifier note:** Android uses MAC addresses (`AA:BB:CC:DD:EE:FF`), iOS uses opaque per-phone UUIDs (not per-app). The UUID can change after Bluetooth settings reset. There is NO cross-platform stable identifier — embed unique IDs in GATT characteristics or manufacturer advertising data if needed.
+
+---
+
+## 5b. Background BLE — Platform-Specific Requirements
+
+**iOS:**
+- Requires `UIBackgroundModes` with `bluetooth-central` in Info.plist
+- Background scanning MUST specify service UUID filters — passing `nil` returns zero results in background
+- `CBCentralManagerScanOptionAllowDuplicatesKey` is ignored in background
+- Scan intervals increase significantly in background
+- State restoration requires `CBCentralManagerOptionRestoreIdentifierKey`
+- Only GATT characteristic notifications wake suspended apps — L2CAP does NOT
+
+**Android:**
+- Background BLE connections require a foreground service with `android:foregroundServiceType="connectedDevice"` (Android 12+ restricts starting foreground services from background)
+- Background scanning options: foreground service (most reliable), `PendingIntent`-based scanning (system-managed), or `CompanionDeviceManager` (Android 12+, limited)
+- Android 14+ foreground service type declaration required in manifest
+
+**Both platforms:** Background BLE is opt-in via Expo config plugin. The library documents requirements but does not automatically configure background mode.
+
+## 5c. Bonding and Encryption Contract
+
+On Android, `getBondState()` only checks whether bond info exists — it does NOT verify the link is actually encrypted. An attacker can spoof MAC addresses and connect unencrypted. Use Nordic's `ensureBond()` after connection to verify actual link encryption, or read a protected characteristic to trigger automatic pairing.
+
+On iOS, the system handles bonding transparently when the peripheral requires encryption. `setNotifyValue` on an encrypted characteristic triggers pairing automatically. There is no explicit `ensureBond()` equivalent.
+
+`getBondedDevices()` is Android-only. iOS has no equivalent of `BluetoothAdapter.getBondedDevices()` — returns empty array on iOS.
 
 ---
 
@@ -612,6 +642,9 @@ func monitorCharacteristic(_ characteristic: CBCharacteristic) -> AsyncStream<Da
 ### State restoration
 
 ```swift
+// IMPORTANT: willRestoreState fires BEFORE centralManagerDidUpdateState.
+// Do NOT assume Bluetooth state is ready here. Only re-attach delegates and store peripheral refs.
+// State restoration only works for system-terminated apps — force-quit by user disables it.
 func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
     if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
         for peripheral in peripherals {
