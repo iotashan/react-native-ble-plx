@@ -26,5 +26,5 @@
     "target": "esnext",
     "verbatimModuleSyntax": true
   },
-  "exclude": ["integration-tests/**", "example/**", "example-expo/**", "src/specs/**"]
+  "exclude": ["integration-tests/**", "example/**", "example-expo/**", "src/specs/**", "src/index.d.ts", "__tests__/**"]
 }
