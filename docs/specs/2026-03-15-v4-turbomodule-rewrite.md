@@ -405,9 +405,12 @@ export interface Spec extends TurboModule {
   writeCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, value: string, withResponse: boolean, transactionId: string | null): Promise<CharacteristicInfo>;
 
   // Monitor (use EventEmitter, not callback — callbacks are single-fire)
-  monitorCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, transactionId: string | null): void;
+  // subscriptionType: 'indicate' | 'notify' | null (null = auto-detect from characteristic
+  // properties, preferring notifications when both are available)
+  monitorCharacteristic(deviceId: string, serviceUuid: string, characteristicUuid: string, subscriptionType: string | null, transactionId: string | null): void;
 
   // MTU
+  getMtu(deviceId: string): Promise<number>;
   requestMtu(deviceId: string, mtu: number, transactionId: string | null): Promise<DeviceInfo>;
 
   // PHY (Android only — iOS returns current PHY info but cannot set)
@@ -440,6 +443,7 @@ export interface Spec extends TurboModule {
   readonly onStateChange: CodegenTypes.EventEmitter<StateChangeEvent>;
   readonly onRestoreState: CodegenTypes.EventEmitter<RestoreStateEvent>;
   readonly onError: CodegenTypes.EventEmitter<BleErrorInfo>;
+  readonly onBondStateChange: CodegenTypes.EventEmitter<Readonly<{ deviceId: string; bondState: string }>>;  // bondState: 'none' | 'bonding' | 'bonded'
   readonly onConnectionEvent: CodegenTypes.EventEmitter<Readonly<{ deviceId: string; event: string }>>;  // iOS 13+ connection events
   readonly onL2CAPData: CodegenTypes.EventEmitter<Readonly<{ channelId: number; data: string }>>;        // L2CAP incoming data
   readonly onL2CAPClose: CodegenTypes.EventEmitter<Readonly<{ channelId: number; error: string | null }>>;
