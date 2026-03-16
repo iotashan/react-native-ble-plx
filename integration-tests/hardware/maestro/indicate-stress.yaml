@@ -4,7 +4,7 @@
 # over 30 seconds without dropping the connection, leaking memory, or crashing.
 #
 # The BlePlxTest peripheral sends indications on the Indicate Stream
-# characteristic (fff3) continuously while monitoring is active.
+# characteristic continuously while monitoring is active.
 # This flow enables the monitor toggle, waits 30 seconds with periodic
 # liveness checks, then disables monitoring and disconnects.
 #
@@ -12,8 +12,8 @@
 #   - The BlePlxTest peripheral is powered on and advertising within range.
 #   - The test app is installed and foregrounded on the device under test.
 #   - BLE permissions have been pre-granted (see README.md).
-#   - The BlePlxTest firmware implements an indicatable characteristic on fff3
-#     that sends indications at a regular cadence when enabled.
+#   - The BlePlxTest firmware implements an indicatable characteristic that
+#     sends indications at a regular cadence when enabled.
 #
 # Run:
 #   maestro test integration-tests/hardware/maestro/indicate-stress.yaml
@@ -28,51 +28,60 @@ appId: com.bleplxexample
 - launchApp:
     clearState: true
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 5000
 
-- assertVisible:
-    text: "PoweredOn"
+- extendedWaitUntil:
+    visible:
+      id: "ble-state"
     timeout: 10000
 
 - tapOn:
     id: "scan-start-btn"
 
-- assertVisible:
-    text: "BlePlxTest"
+- tapOn:
+    id: "scan-search"
+- inputText: "BlePlxTest"
+- hideKeyboard
+
+- extendedWaitUntil:
+    visible:
+      id: "device-BlePlxTest"
     timeout: 15000
 
 # ---------------------------------------------------------------------------
 # 2. Connect to BlePlxTest
 # ---------------------------------------------------------------------------
 - tapOn:
-    text: "BlePlxTest"
+    id: "device-BlePlxTest"
 
-- assertVisible:
-    id: "discover-btn"
+- extendedWaitUntil:
+    visible:
+      id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 3. Discover services and dismiss the alert
+# 3. Discover services
 # ---------------------------------------------------------------------------
 - tapOn:
     id: "discover-btn"
 
-- assertVisible:
-    text: "Discovery"
-    timeout: 8000
-- tapOn:
-    text: "OK"
+- extendedWaitUntil:
+    visible:
+      id: "service-test"
+    timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 4. Navigate to the Indicate Stream characteristic (fff3)
+# 4. Navigate to the Indicate Stream characteristic
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "char-fff3"
+    id: "char-indicate-stream"
 
-- assertVisible:
-    id: "monitor-toggle"
+- extendedWaitUntil:
+    visible:
+      id: "monitor-toggle"
     timeout: 5000
 
 # Confirm the value-display is present before enabling monitoring
@@ -97,13 +106,9 @@ appId: com.bleplxexample
 
 # ---------------------------------------------------------------------------
 # 6. Run for 30 seconds with periodic liveness checks
-#
-# Maestro does not have a native timer loop, so we use a sequence of
-# waitForAnimationToEnd calls as coarse 5-second delays. Each checkpoint
-# verifies the value-display is still updating and no error has appeared.
 # ---------------------------------------------------------------------------
 
-# t ≈ 5 s
+# t ~ 5 s
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -111,7 +116,7 @@ appId: com.bleplxexample
 - assertNotVisible:
     text: "Monitor error"
 
-# t ≈ 10 s
+# t ~ 10 s
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -119,7 +124,7 @@ appId: com.bleplxexample
 - assertNotVisible:
     text: "Monitor error"
 
-# t ≈ 15 s
+# t ~ 15 s
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -127,7 +132,7 @@ appId: com.bleplxexample
 - assertNotVisible:
     text: "Monitor error"
 
-# t ≈ 20 s
+# t ~ 20 s
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -135,7 +140,7 @@ appId: com.bleplxexample
 - assertNotVisible:
     text: "Monitor error"
 
-# t ≈ 25 s
+# t ~ 25 s
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -143,7 +148,7 @@ appId: com.bleplxexample
 - assertNotVisible:
     text: "Monitor error"
 
-# t ≈ 30 s — final check
+# t ~ 30 s — final check
 - waitForAnimationToEnd:
     timeout: 5000
 - assertVisible:
@@ -169,13 +174,15 @@ appId: com.bleplxexample
 # ---------------------------------------------------------------------------
 - back
 
-- assertVisible:
-    id: "disconnect-btn"
+- extendedWaitUntil:
+    visible:
+      id: "disconnect-btn"
     timeout: 5000
 
 - tapOn:
     id: "disconnect-btn"
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 8000

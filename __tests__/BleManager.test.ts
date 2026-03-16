@@ -11,6 +11,8 @@ let stateChangeHandler: ((event: any) => void) | null = null
 let restoreStateHandler: ((event: any) => void) | null = null
 let bondStateChangeHandler: ((event: any) => void) | null = null
 let connectionEventHandler: ((event: any) => void) | null = null
+let l2capDataHandler: ((event: any) => void) | null = null
+let l2capCloseHandler: ((event: any) => void) | null = null
 
 // Convenience aliases for single-handler tests
 const getScanResultHandler = () => scanResultHandlers[scanResultHandlers.length - 1] ?? null
@@ -158,6 +160,22 @@ const mockNativeModule = {
         connectionEventHandler = null
       })
     }
+  }),
+  onL2CAPData: jest.fn(handler => {
+    l2capDataHandler = handler
+    return {
+      remove: jest.fn(() => {
+        l2capDataHandler = null
+      })
+    }
+  }),
+  onL2CAPClose: jest.fn(handler => {
+    l2capCloseHandler = handler
+    return {
+      remove: jest.fn(() => {
+        l2capCloseHandler = null
+      })
+    }
   })
 }
 
@@ -226,7 +244,7 @@ describe('BleManager', () => {
       if (device) received.push(device)
     })
 
-    expect(mockNativeModule.startDeviceScan).toHaveBeenCalledWith(null, null)
+    expect(mockNativeModule.startDeviceScan).toHaveBeenCalledWith(null, {})
     expect(mockNativeModule.onScanResult).toHaveBeenCalled()
     expect(getScanResultHandler()).not.toBeNull()
 
@@ -685,5 +703,55 @@ describe('BleManager', () => {
     expect(callback).toHaveBeenCalledWith({ deviceId: 'AA:BB', connectionState: 'connected' })
 
     sub.remove()
+  })
+
+  // -------------------------------------------------------------------------
+
+  test('monitorL2CAPChannel receives data events filtered by channelId', () => {
+    const listener = jest.fn()
+    const sub = manager.monitorL2CAPChannel(1, listener)
+
+    expect(mockNativeModule.onL2CAPData).toHaveBeenCalled()
+    expect(mockNativeModule.onL2CAPClose).toHaveBeenCalled()
+
+    // Data for our channel
+    l2capDataHandler!({ channelId: 1, data: 'SGVsbG8=' })
+    expect(listener).toHaveBeenCalledWith(null, { channelId: 1, data: 'SGVsbG8=' })
+
+    // Data for a different channel — should be ignored
+    l2capDataHandler!({ channelId: 2, data: 'other' })
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    sub.remove()
+  })
+
+  test('monitorL2CAPChannel calls listener with (null, null) on clean close', () => {
+    const listener = jest.fn()
+    manager.monitorL2CAPChannel(1, listener)
+
+    // Clean close (no error)
+    l2capCloseHandler!({ channelId: 1, error: null })
+    expect(listener).toHaveBeenCalledWith(null, null)
+  })
+
+  test('monitorL2CAPChannel calls listener with BleError on error close', () => {
+    const listener = jest.fn()
+    manager.monitorL2CAPChannel(1, listener)
+
+    // Error close
+    l2capCloseHandler!({ channelId: 1, error: 'Connection lost' })
+    expect(listener).toHaveBeenCalledTimes(1)
+    const [error, data] = listener.mock.calls[0]
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toBe('Connection lost')
+    expect(data).toBeNull()
+  })
+
+  test('monitorL2CAPChannel ignores close events for other channels', () => {
+    const listener = jest.fn()
+    manager.monitorL2CAPChannel(1, listener)
+
+    l2capCloseHandler!({ channelId: 2, error: 'Connection lost' })
+    expect(listener).not.toHaveBeenCalled()
   })
 })

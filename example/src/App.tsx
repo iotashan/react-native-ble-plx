@@ -6,6 +6,7 @@ import { BleManager } from 'react-native-ble-plx'
 import ScanScreen from './screens/ScanScreen'
 import DeviceScreen from './screens/DeviceScreen'
 import CharacteristicScreen from './screens/CharacteristicScreen'
+import L2CAPScreen from './screens/L2CAPScreen'
 
 export type RootStackParamList = {
   Scan: { manager: BleManager }
@@ -22,6 +23,11 @@ export type RootStackParamList = {
       isNotifying: boolean
       isIndicatable: boolean
     }
+  }
+  L2CAP: {
+    manager: BleManager
+    deviceId: string
+    psm: number
   }
 }
 
@@ -59,6 +65,11 @@ export default function App() {
           name="Characteristic"
           component={CharacteristicScreen}
           options={{ title: 'Characteristic' }}
+        />
+        <Stack.Screen
+          name="L2CAP"
+          component={L2CAPScreen}
+          options={{ title: 'L2CAP Channel' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

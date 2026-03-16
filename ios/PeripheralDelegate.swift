@@ -60,6 +60,9 @@ final class PeripheralDelegate: NSObject, CBPeripheralDelegate, Sendable {
     // Write without response flow control
     private let writeWithoutResponseSubject = AsyncStreamBridge<Void>()
 
+    // L2CAP channel open
+    let pendingL2CAPOpen = LockedBox<CheckedContinuation<CBL2CAPChannel, Error>?>(nil)
+
     // Pending continuations for one-shot operations
     private let pendingServiceDiscovery = LockedBox<CheckedContinuation<Void, Error>?>(nil)
     private let pendingCharacteristicDiscovery = LockedDictionary<String, CheckedContinuation<Void, Error>>()
@@ -101,6 +104,10 @@ final class PeripheralDelegate: NSObject, CBPeripheralDelegate, Sendable {
 
     func addRSSIContinuation(_ continuation: CheckedContinuation<Int, Error>) {
         pendingRSSI.value = continuation
+    }
+
+    func addL2CAPOpenContinuation(_ continuation: CheckedContinuation<CBL2CAPChannel, Error>) {
+        pendingL2CAPOpen.value = continuation
     }
 
     // MARK: - CBPeripheralDelegate — Service Discovery
@@ -215,6 +222,33 @@ final class PeripheralDelegate: NSObject, CBPeripheralDelegate, Sendable {
                 ))
             } else {
                 continuation.resume(returning: RSSI.intValue)
+            }
+        }
+    }
+
+    // MARK: - CBPeripheralDelegate — L2CAP
+
+    func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+        let continuation: CheckedContinuation<CBL2CAPChannel, Error>? = pendingL2CAPOpen.mutate { current in
+            let taken = current
+            current = nil
+            return taken
+        }
+        if let continuation = continuation {
+            if let error = error {
+                continuation.resume(throwing: ErrorConverter.from(
+                    cbError: error,
+                    deviceId: deviceId,
+                    operation: "openL2CAPChannel"
+                ))
+            } else if let channel = channel {
+                continuation.resume(returning: channel)
+            } else {
+                continuation.resume(throwing: BleError(
+                    code: .l2capOpenFailed,
+                    message: "L2CAP channel open returned nil channel without error",
+                    deviceId: deviceId
+                ))
             }
         }
     }

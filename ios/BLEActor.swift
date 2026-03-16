@@ -212,6 +212,8 @@ actor BLEActor {
         let peripheral: CBPeripheral
         if let wrapper = peripherals[uuid] {
             peripheral = await wrapper.cbPeripheral
+        } else if let discovered = delegateHandler.discoveredPeripheral(for: uuid) {
+            peripheral = discovered
         } else {
             let known = cm.retrievePeripherals(withIdentifiers: [uuid])
             guard let p = known.first else {
@@ -394,11 +396,15 @@ actor BLEActor {
 
     func openL2CAPChannel(deviceId: String, psm: UInt16) async throws -> Int {
         let wrapper = try getPeripheral(deviceId: deviceId)
-        await wrapper.openL2CAPChannel(psm: CBL2CAPPSM(psm))
-        // The actual channel is received via the peripheral delegate
-        // For now, return a pending channel ID
-        // TODO: Wire up CBPeripheral didOpenL2CAPChannel callback
-        throw BleError(code: .l2capOpenFailed, message: "L2CAP channel open is pending — callback not yet wired")
+        let channel = try await wrapper.openL2CAPChannel(psm: CBL2CAPPSM(psm))
+        do {
+            let channelId = await l2capManager.registerChannel(channel)
+            return channelId
+        } catch {
+            channel.inputStream.close()
+            channel.outputStream.close()
+            throw error
+        }
     }
 
     func writeL2CAPChannel(channelId: Int, data: Data) async throws {

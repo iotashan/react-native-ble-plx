@@ -184,8 +184,19 @@ actor PeripheralWrapper {
     // MARK: - L2CAP
 
     @available(iOS 11.0, *)
-    func openL2CAPChannel(psm: CBL2CAPPSM) {
-        peripheral.openL2CAPChannel(psm)
+    func openL2CAPChannel(psm: CBL2CAPPSM) async throws -> CBL2CAPChannel {
+        // Guard against concurrent opens
+        guard delegate.pendingL2CAPOpen.value == nil else {
+            throw BleError(
+                code: .l2capOpenFailed,
+                message: "L2CAP channel open already in progress",
+                deviceId: deviceId
+            )
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CBL2CAPChannel, Error>) in
+            delegate.addL2CAPOpenContinuation(continuation)
+            peripheral.openL2CAPChannel(psm)
+        }
     }
 
     // MARK: - Internal

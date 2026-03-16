@@ -29,6 +29,9 @@ final class CentralManagerDelegate: NSObject, CBCentralManagerDelegate, Sendable
     /// Only accessed from the CB queue — not Sendable, not crossed across isolation domains.
     private let rawRestorationDicts = LockedBox<[[String: Any]]>([])
 
+    /// Discovered peripherals retained during scanning so CoreBluetooth doesn't deallocate them.
+    private let discoveredPeripherals = LockedDictionary<UUID, CBPeripheral>()
+
     // MARK: - Streams
 
     var stateStream: AsyncStream<CBManagerState> { stateSubject.stream }
@@ -58,12 +61,25 @@ final class CentralManagerDelegate: NSObject, CBCentralManagerDelegate, Sendable
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        // Retain the peripheral so CoreBluetooth doesn't deallocate it before connection
+        discoveredPeripherals.set(peripheral.identifier, value: peripheral)
+
         let snapshot = EventSerializer.scanResult(
             from: peripheral,
             advertisementData: advertisementData,
             rssi: RSSI
         )
         scanSubject.yield(snapshot)
+    }
+
+    /// Retrieve a discovered peripheral by UUID. Returns nil if not found.
+    func discoveredPeripheral(for uuid: UUID) -> CBPeripheral? {
+        return discoveredPeripherals.value(forKey: uuid)
+    }
+
+    /// Clear discovered peripherals (e.g., when scan stops or manager is destroyed).
+    func clearDiscoveredPeripherals() {
+        discoveredPeripherals.removeAllValues()
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -185,6 +201,12 @@ final class LockedBox<T>: @unchecked Sendable {
         get { lock.withLock { _value } }
         set { lock.withLock { _value = newValue } }
     }
+
+    /// Atomically read and transform the value in a single locked operation.
+    @discardableResult
+    func mutate<R>(_ transform: (inout T) -> R) -> R {
+        lock.withLock { transform(&_value) }
+    }
 }
 
 /// Thread-safe dictionary
@@ -200,6 +222,10 @@ final class LockedDictionary<Key: Hashable, Value>: @unchecked Sendable {
         lock.withLock { dict.removeValue(forKey: key) }
     }
 
+    func value(forKey key: Key) -> Value? {
+        lock.withLock { dict[key] }
+    }
+
     func removeAll(handler: (Value) -> Void) {
         lock.withLock {
             for (_, value) in dict {
@@ -207,5 +233,9 @@ final class LockedDictionary<Key: Hashable, Value>: @unchecked Sendable {
             }
             dict.removeAll()
         }
+    }
+
+    func removeAllValues() {
+        lock.withLock { dict.removeAll() }
     }
 }

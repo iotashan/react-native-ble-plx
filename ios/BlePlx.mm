@@ -66,17 +66,19 @@ RCT_EXPORT_MODULE(NativeBlePlx)
 - (void)startDeviceScan:(NSArray * _Nullable)uuids
                 options:(JS::NativeBlePlx::SpecStartDeviceScanOptions &)options {
     NSMutableDictionary *optionsDict = [NSMutableDictionary dictionary];
-    if (options.scanMode().has_value()) {
-        optionsDict[@"scanMode"] = @(options.scanMode().value());
-    }
-    if (options.callbackType().has_value()) {
-        optionsDict[@"callbackType"] = @(options.callbackType().value());
-    }
-    if (options.legacyScan().has_value()) {
-        optionsDict[@"legacyScan"] = @(options.legacyScan().value());
-    }
-    if (options.allowDuplicates().has_value()) {
-        optionsDict[@"allowDuplicates"] = @(options.allowDuplicates().value());
+    {
+        if (options.scanMode().has_value()) {
+            optionsDict[@"scanMode"] = @(options.scanMode().value());
+        }
+        if (options.callbackType().has_value()) {
+            optionsDict[@"callbackType"] = @(options.callbackType().value());
+        }
+        if (options.legacyScan().has_value()) {
+            optionsDict[@"legacyScan"] = @(options.legacyScan().value());
+        }
+        if (options.allowDuplicates().has_value()) {
+            optionsDict[@"allowDuplicates"] = @(options.allowDuplicates().value());
+        }
     }
     [_impl startDeviceScanWithUuids:uuids options:optionsDict];
 }

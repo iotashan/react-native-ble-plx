@@ -1,127 +1,133 @@
-# Maestro Hardware Integration Tests
+# BLE E2E Tests (Maestro)
 
-These flows test the react-native-ble-plx library against real BLE hardware
-using the [Maestro](https://maestro.mobile.dev) mobile UI testing framework.
+Automated end-to-end tests for react-native-ble-plx using two physical devices.
 
-## Prerequisites
+## Setup
 
-### Hardware
+### Devices
+- **iPhone**: UDID `00008130-000A34C12021401C`
+- **Android**: ID `1A211FDF60055L`
 
-- A **BlePlxTest** peripheral must be flashed with the test firmware and powered
-  on within BLE range of the device under test.
-- The firmware is located in `integration-tests/hardware/peripheral-firmware/`.
+### Apps Required
+| App | Android Package | iOS Bundle ID |
+|-----|----------------|---------------|
+| Example (scanner) | `com.bleplxexample` | `com.iotashan.example.--PRODUCT-NAME-rfc1034identifier-` |
+| BlePlxTest (peripheral) | `com.bleplx.testperipheral` | `com.bleplx.testperipheral.ios` |
 
-### App
-
-- The example app (`example/`) must be built and installed on the test device.
-- Android package: `com.bleplxexample`
-- iOS bundle ID: `org.reactjs.native.example.BlePlxExample`
+### Prerequisites
+1. Both devices connected (`adb devices`, `xcrun devicectl list devices`)
+2. All 4 apps installed on appropriate devices
+3. BLE permissions pre-granted on both devices
+4. Metro bundler running for the example app
+5. `maestro` CLI installed (`brew install maestro`)
 
 ### BLE Permissions
 
-BLE permissions must be granted before the flows run. Maestro does not handle
-system permission dialogs reliably on all platforms.
-
 #### Android (API 31+)
-
-Run the following `adb` commands after installing the app:
-
 ```bash
 adb shell pm grant com.bleplxexample android.permission.BLUETOOTH_SCAN
 adb shell pm grant com.bleplxexample android.permission.BLUETOOTH_CONNECT
 adb shell pm grant com.bleplxexample android.permission.ACCESS_FINE_LOCATION
 ```
 
-For Android API 28–30 (legacy location permission only):
-
-```bash
-adb shell pm grant com.bleplxexample android.permission.ACCESS_FINE_LOCATION
-```
-
 #### iOS
+Grant BLE and location permissions manually on first launch, then terminate and re-launch.
 
-iOS BLE (`NSBluetoothAlwaysUsageDescription`) and location permissions must be
-granted manually on first launch. Open the app on the device, accept all
-permission prompts, then terminate and re-launch before running the flows.
-
-Alternatively, if using an iOS simulator with a paired BLE adapter, no
-permission prompt appears.
-
-## Running the Flows
-
-Ensure the `maestro` CLI is installed (`brew install maestro` on macOS).
-
-### Individual flows
+## Running Tests
 
 ```bash
-# Full happy path: scan, connect, read characteristic, disconnect
-maestro test integration-tests/hardware/maestro/scan-pair-sync.yaml
+# Android as scanner, iPhone as peripheral
+./run-e2e.sh android
 
-# Write a value to echo characteristic and read it back
-maestro test integration-tests/hardware/maestro/write-read-roundtrip.yaml
+# iPhone as scanner, Android as peripheral
+./run-e2e.sh ios
 
-# Simulate unexpected disconnection and verify recovery
-maestro test integration-tests/hardware/maestro/disconnect-recovery.yaml
-
-# Sustained indication stream for 30 seconds
-maestro test integration-tests/hardware/maestro/indicate-stress.yaml
+# Run a specific test only
+./run-e2e.sh android 03    # write-read-echo test
+./run-e2e.sh ios 04        # notify-stream test
 ```
 
-### All flows in sequence
+## Test Flows
 
-```bash
-maestro test integration-tests/hardware/maestro/
-```
+| File | Test | What it validates |
+|------|------|------------------|
+| `_connect-and-discover.yaml` | (shared subflow) | Scan, stop scan, connect, discover, expand test service |
+| `01-scan-connect-discover.yaml` | Scan/Connect/Discover | Full happy path, all 5 characteristics visible, MTU shown |
+| `02-read-counter.yaml` | Read Characteristic | Read counter returns a value, second read returns different value |
+| `03-write-read-echo.yaml` | Write/Read Roundtrip | Write base64 "SGVsbG8=", read back, verify match |
+| `04-notify-stream.yaml` | Notification Stream | 5s of notifications, >= 5 samples, >= 2 distinct values |
+| `05-indicate-stream.yaml` | Indication Stream | 6s of indications, >= 3 samples, >= 2 distinct values |
+| `06-mtu-read.yaml` | MTU Query | MTU on DeviceScreen, MTU characteristic readable |
+| `07-disconnect-reconnect.yaml` | Disconnect/Reconnect | Disconnect, re-scan, reconnect, re-discover |
 
-## Flow Descriptions
+### Legacy Flows (pre-v4, may need updating)
+| File | Notes |
+|------|-------|
+| `scan-pair-sync.yaml` | Uses old UUID scheme (fff1-fff3) |
+| `write-read-roundtrip.yaml` | Uses old UUID scheme |
+| `disconnect-recovery.yaml` | Requires manual firmware disconnect trigger |
+| `indicate-stress.yaml` | Uses old UUID scheme |
 
-| File | What it tests |
-|------|---------------|
-| `scan-pair-sync.yaml` | Full happy path: BLE scan, connect, discover, read, disconnect |
-| `write-read-roundtrip.yaml` | Write to echo characteristic and verify read-back matches |
-| `disconnect-recovery.yaml` | Unexpected peripheral disconnect; re-scan and reconnect |
-| `indicate-stress.yaml` | 30-second indication stream stress test on CharacteristicScreen |
+## TestID Reference
 
-## TestIDs Reference
-
-The example app uses the following `testID` props for Maestro assertions:
-
-**ScanScreen** (`example/src/screens/ScanScreen.tsx`)
-
+### ScanScreen
 | testID | Element |
 |--------|---------|
 | `scan-start-btn` | Start Scan button |
 | `scan-stop-btn` | Stop Scan button |
-| `device-list` | FlatList of discovered devices |
-| `device-item-{id}` | Individual device row (id = MAC address or UUID) |
+| `device-list` | FlatList of devices |
+| `device-item-{id}` | Individual device row |
 
-**DeviceScreen** (`example/src/screens/DeviceScreen.tsx`)
-
+### DeviceScreen
 | testID | Element |
 |--------|---------|
 | `discover-btn` | Discover Services button |
 | `disconnect-btn` | Disconnect button |
-| `service-{uuid}` | Service group container (populated after discovery) |
-| `char-{uuid}` | Characteristic row (tap to navigate to CharacteristicScreen) |
+| `device-mtu` | MTU display text |
+| `service-test` | Test service header (expandable) |
+| `service-list` | FlatList of services |
+| `test-char-list` | Expanded test characteristic list |
+| `char-read-counter` | Read Counter characteristic |
+| `char-write-echo` | Write Echo characteristic |
+| `char-notify-stream` | Notify Stream characteristic |
+| `char-indicate-stream` | Indicate Stream characteristic |
+| `char-mtu-test` | MTU Test characteristic |
 
-**CharacteristicScreen** (`example/src/screens/CharacteristicScreen.tsx`)
-
+### CharacteristicScreen
 | testID | Element |
 |--------|---------|
-| `read-btn` | Read button (visible when characteristic is readable) |
-| `write-input` | TextInput for base64 write value |
-| `write-btn` | Write button (visible when characteristic is writable) |
-| `monitor-toggle` | Switch to enable/disable notifications or indications |
-| `value-display` | Text showing the current characteristic value |
+| `read-btn` | Read button |
+| `write-input` | Write value TextInput |
+| `write-btn` | Write button |
+| `monitor-toggle` | Monitor enable/disable Switch |
+| `value-display` | Current value display |
+| `sample-count` | Monitor sample count (e.g. "Samples: 12") |
+| `distinct-count` | Monitor distinct value count (e.g. "Distinct: 8") |
 
-## Notes
+## Features NOT Covered by E2E Tests
 
-- The `disconnect-recovery.yaml` flow requires a manual or automated step to
-  trigger an unexpected disconnection from the firmware side. Annotated
-  comments in the flow indicate where to insert a relay command or serial call.
-- The `write-read-roundtrip.yaml` flow uses base64-encoded values. "Hello"
-  encodes to `SGVsbG8=`.
-- Discovery on DeviceScreen currently shows an alert because the v4 API's
-  `servicesForDevice()` is not yet implemented; characteristic rows (char-{uuid})
-  only appear once that API is available. Until then, flows that navigate to a
-  characteristic require the service list to be populated by the firmware.
+These react-native-ble-plx features **cannot** be tested with the current Maestro E2E setup:
+
+| Feature | API Methods | Reason |
+|---------|------------|--------|
+| **L2CAP Channels** | `openL2CAPChannel`, `writeL2CAPChannel`, `closeL2CAPChannel` | Neither test peripheral implements L2CAP PSM |
+| **PHY Requests** | `requestPhy`, `readPhy` | Android-only API; no observable UI effect |
+| **Connection Priority** | `requestConnectionPriority` | Android-only; affects radio timing only, no UI feedback |
+| **Bond State / Pairing** | `onBondStateChange`, `getBondedDevices` | Requires system pairing dialog that Maestro can't control |
+| **State Restoration** | `onRestoreState` | Requires killing app during active BLE connection and relaunching with CoreBluetooth background restoration |
+| **Write Without Response** | `writeCharacteristicForDevice(_, _, _, _, false)` | Test peripheral's Write Echo uses write-with-response only; would need a 6th characteristic |
+| **Permission Denied Flows** | N/A | Maestro cannot reliably deny system permission dialogs |
+| **Multiple Connections** | N/A | Only one BlePlxTest peripheral available per device |
+| **Transaction Cancellation** | `cancelTransaction` | Requires canceling mid-flight; timing is impractical in UI tests |
+| **Authorization Status** | `getAuthorizationStatus` | Read-only; cannot toggle Bluetooth authorization via Maestro |
+| **Background Mode** | N/A | Would require backgrounding the app during active connections |
+| **Scan with UUID Filter** | `startDeviceScan([uuids], ...)` | Covered by unfiltered scan code path; filter is a CoreBluetooth/Android pass-through |
+
+## Architecture Notes
+
+- **Stop scan before connect**: The shared subflow explicitly stops scanning before connecting. Some Android devices fail connection attempts during active scans.
+- **Auto-expand test service**: After discovery, DeviceScreen auto-expands the test service so characteristics are immediately visible to Maestro.
+- **Sample/distinct counters**: CharacteristicScreen tracks notification/indication sample counts for reliable stream assertions.
+- **Semantic testIDs**: Characteristic rows use semantic IDs (`char-read-counter`) not raw UUIDs, avoiding casing issues across platforms.
+- **iOS peripheral backpressure**: The iOS BlePlxTest handles `updateValue` returning `false` and waits for `peripheralManagerIsReady(toUpdateSubscribers:)`.
+- **Fire-and-forget peripheral**: The peripheral app is launched on the server device and left running. Maestro only controls the scanner device.

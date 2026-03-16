@@ -24,30 +24,39 @@ appId: com.bleplxexample
 - launchApp:
     clearState: true
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 5000
 
-- assertVisible:
-    text: "PoweredOn"
+- extendedWaitUntil:
+    visible:
+      id: "ble-state"
     timeout: 10000
 
 - tapOn:
     id: "scan-start-btn"
 
-- assertVisible:
-    text: "BlePlxTest"
+- tapOn:
+    id: "scan-search"
+- inputText: "BlePlxTest"
+- hideKeyboard
+
+- extendedWaitUntil:
+    visible:
+      id: "device-BlePlxTest"
     timeout: 15000
 
 # ---------------------------------------------------------------------------
 # 2. Connect to BlePlxTest
 # ---------------------------------------------------------------------------
 - tapOn:
-    text: "BlePlxTest"
+    id: "device-BlePlxTest"
 
 # Confirm we have reached DeviceScreen (connected state)
-- assertVisible:
-    id: "discover-btn"
+- extendedWaitUntil:
+    visible:
+      id: "discover-btn"
     timeout: 10000
 
 - assertVisible:
@@ -69,8 +78,9 @@ appId: com.bleplxexample
 
 # The library detects link loss via onDeviceDisconnected. The app calls
 # navigation.goBack(), returning to ScanScreen.
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 15000
 
 # The scan-start-btn being visible confirms we are back on ScanScreen,
@@ -85,15 +95,24 @@ appId: com.bleplxexample
 - tapOn:
     id: "scan-start-btn"
 
-- assertVisible:
-    text: "BlePlxTest"
+# Search field may still have text from before; clear and re-enter
+- tapOn:
+    id: "scan-search"
+- eraseText: 50
+- inputText: "BlePlxTest"
+- hideKeyboard
+
+- extendedWaitUntil:
+    visible:
+      id: "device-BlePlxTest"
     timeout: 20000
 
 - tapOn:
-    text: "BlePlxTest"
+    id: "device-BlePlxTest"
 
-- assertVisible:
-    id: "discover-btn"
+- extendedWaitUntil:
+    visible:
+      id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
@@ -102,6 +121,7 @@ appId: com.bleplxexample
 - tapOn:
     id: "disconnect-btn"
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 8000

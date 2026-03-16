@@ -1,7 +1,7 @@
 import { TurboModuleRegistry, Platform } from 'react-native'
 import type { EventSubscription, TurboModule } from 'react-native'
 import type { State, ScanOptions, ConnectOptions, ConnectionPriority } from './types'
-import { BleError } from './BleError'
+import { BleError, BleErrorCode } from './BleError'
 import { EventBatcher } from './EventBatcher'
 
 // ---------------------------------------------------------------------------
@@ -169,6 +169,8 @@ interface NativeBlePlxSpec extends TurboModule {
   readonly onRestoreState: NativeEventEmitter<RestoreStateEvent>
   readonly onBondStateChange: NativeEventEmitter<BondStateEvent>
   readonly onConnectionEvent: NativeEventEmitter<ConnectionEvent>
+  readonly onL2CAPData: NativeEventEmitter<{ readonly channelId: number; readonly data: string }>
+  readonly onL2CAPClose: NativeEventEmitter<{ readonly channelId: number; readonly error: string | null }>
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +367,8 @@ export class BleManager {
     })
 
     // Start native scan (synchronous — errors come via onError)
-    this.nativeModule.startDeviceScan(serviceUuids, options ?? null)
+    // Pass empty object instead of null — iOS Codegen struct crashes on null backing dictionary
+    this.nativeModule.startDeviceScan(serviceUuids, options ?? {})
   }
 
   async stopDeviceScan(): Promise<void> {
@@ -385,7 +388,8 @@ export class BleManager {
   // -----------------------------------------------------------------------
 
   async connectToDevice(deviceId: string, options?: ConnectOptions | null): Promise<DeviceInfo> {
-    return this.nativeModule.connectToDevice(deviceId, options ?? null)
+    // Pass empty object instead of null — iOS Codegen struct crashes on null backing dictionary
+    return this.nativeModule.connectToDevice(deviceId, options ?? {})
   }
 
   async cancelDeviceConnection(deviceId: string): Promise<DeviceInfo> {
@@ -594,6 +598,54 @@ export class BleManager {
 
   async closeL2CAPChannel(channelId: number): Promise<void> {
     return this.nativeModule.closeL2CAPChannel(channelId)
+  }
+
+  monitorL2CAPChannel(
+    channelId: number,
+    listener: (error: BleError | null, data: { channelId: number; data: string } | null) => void
+  ): Subscription {
+    let subscription: Subscription
+
+    const dataSub = this.nativeModule.onL2CAPData(event => {
+      if (event.channelId === channelId) {
+        listener(null, { channelId: event.channelId, data: event.data })
+      }
+    })
+
+    const closeSub = this.nativeModule.onL2CAPClose(event => {
+      if (event.channelId === channelId) {
+        if (event.error) {
+          listener(
+            new BleError({
+              code: BleErrorCode.L2CAPChannelClosed,
+              message: event.error,
+              isRetryable: false,
+              platform: Platform.OS === 'ios' ? 'ios' : 'android'
+            }),
+            null
+          )
+        } else {
+          // Notify listener of clean close
+          listener(null, null)
+        }
+        // Clean up native subscriptions
+        dataSub.remove()
+        closeSub.remove()
+        // Remove from tracked subscriptions so destroyClient doesn't double-remove
+        this.consumerSubscriptions.delete(subscription)
+      }
+    })
+
+    subscription = {
+      remove: () => {
+        dataSub.remove()
+        closeSub.remove()
+        this.consumerSubscriptions.delete(subscription)
+      }
+    }
+
+    this.consumerSubscriptions.add(subscription)
+    return subscription
   }
 
   // -----------------------------------------------------------------------

@@ -31,43 +31,43 @@ appId: com.bleplxexample
 
 # ---------------------------------------------------------------------------
 # 2. Wait for BLE to be powered on, then start scanning
-#
-# The BLE state is displayed as inline text: "BLE State: PoweredOn".
-# We wait for it to appear before scanning.
 # ---------------------------------------------------------------------------
-- assertVisible:
-    text: "PoweredOn"
+- extendedWaitUntil:
+    visible:
+      id: "ble-state"
     timeout: 10000
 
 - tapOn:
     id: "scan-start-btn"
 
 # ---------------------------------------------------------------------------
-# 3. Wait for the BlePlxTest peripheral to appear in the device list
+# 3. Filter and wait for the BlePlxTest peripheral to appear
 # ---------------------------------------------------------------------------
+- tapOn:
+    id: "scan-search"
+- inputText: "BlePlxTest"
+- hideKeyboard
+
 - assertVisible:
     id: "device-list"
 
-- assertVisible:
-    text: "BlePlxTest"
+- extendedWaitUntil:
+    visible:
+      id: "device-BlePlxTest"
     timeout: 15000
 
 # ---------------------------------------------------------------------------
 # 4. Tap the device row to connect
-#
-# The device row testID is device-item-{MAC/UUID}. Since the exact ID is
-# unknown at authoring time, we tap by the displayed name instead.
 # ---------------------------------------------------------------------------
 - tapOn:
-    text: "BlePlxTest"
+    id: "device-BlePlxTest"
 
 # ---------------------------------------------------------------------------
 # 5. Wait for the DeviceScreen to load
-#
-# The DeviceScreen shows the discover-btn once the connection is established.
 # ---------------------------------------------------------------------------
-- assertVisible:
-    id: "discover-btn"
+- extendedWaitUntil:
+    visible:
+      id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
@@ -76,28 +76,24 @@ appId: com.bleplxexample
 - tapOn:
     id: "discover-btn"
 
-# The app alerts on discovery completion. Dismiss the alert.
-- assertVisible:
-    text: "Discovery"
-    timeout: 8000
-- tapOn:
-    text: "OK"
+# Wait for the test service to appear and auto-expand
+- extendedWaitUntil:
+    visible:
+      id: "service-test"
+    timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 7. Navigate to a characteristic
-#
-# If the service list is populated (future v4 API), tap the first visible
-# characteristic. The testIDs follow the pattern char-{uuid}.
-# For the read-counter characteristic on BlePlxTest firmware use the known UUID.
+# 7. Navigate to the Read Counter characteristic
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "char-fff1"
+    id: "char-read-counter"
 
 # ---------------------------------------------------------------------------
 # 8. On CharacteristicScreen: read the value and verify it appears
 # ---------------------------------------------------------------------------
-- assertVisible:
-    id: "read-btn"
+- extendedWaitUntil:
+    visible:
+      id: "read-btn"
     timeout: 5000
 
 - tapOn:
@@ -105,8 +101,9 @@ appId: com.bleplxexample
 
 # value-display starts as "(none)"; after a successful read it shows a base64
 # encoded value. Assert it is no longer showing "(none)".
-- assertVisible:
-    id: "value-display"
+- extendedWaitUntil:
+    visible:
+      id: "value-display"
     timeout: 5000
 - assertNotVisible:
     text: "Value: (none)"
@@ -116,14 +113,16 @@ appId: com.bleplxexample
 # ---------------------------------------------------------------------------
 - back
 
-- assertVisible:
-    id: "disconnect-btn"
+- extendedWaitUntil:
+    visible:
+      id: "disconnect-btn"
     timeout: 5000
 
 - tapOn:
     id: "disconnect-btn"
 
 # After disconnecting, navigation returns to ScanScreen
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 8000

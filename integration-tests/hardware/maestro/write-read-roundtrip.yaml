@@ -1,15 +1,15 @@
 # Maestro flow: Write → Read Roundtrip
 #
-# Verifies that a value written to the Write Echo characteristic (fff2 on
-# BlePlxTest firmware) can be read back with the same content, confirming
-# bidirectional characteristic I/O works end-to-end.
+# Verifies that a value written to the Write Echo characteristic can be read
+# back with the same content, confirming bidirectional characteristic I/O works
+# end-to-end.
 #
 # Prerequisites:
 #   - The BlePlxTest peripheral is powered on and advertising within range.
 #   - The test app is installed and foregrounded on the device under test.
 #   - BLE permissions have been pre-granted (see README.md).
-#   - The BlePlxTest firmware implements a write-echo characteristic on fff2
-#     that echoes back whatever value was last written.
+#   - The BlePlxTest firmware implements a write-echo characteristic that echoes
+#     back whatever value was last written.
 #
 # Run:
 #   maestro test integration-tests/hardware/maestro/write-read-roundtrip.yaml
@@ -24,12 +24,14 @@ appId: com.bleplxexample
 - launchApp:
     clearState: true
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 5000
 
-- assertVisible:
-    text: "PoweredOn"
+- extendedWaitUntil:
+    visible:
+      id: "ble-state"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
@@ -38,37 +40,44 @@ appId: com.bleplxexample
 - tapOn:
     id: "scan-start-btn"
 
-- assertVisible:
-    text: "BlePlxTest"
+- tapOn:
+    id: "scan-search"
+- inputText: "BlePlxTest"
+- hideKeyboard
+
+- extendedWaitUntil:
+    visible:
+      id: "device-BlePlxTest"
     timeout: 15000
 
 - tapOn:
-    text: "BlePlxTest"
+    id: "device-BlePlxTest"
 
-- assertVisible:
-    id: "discover-btn"
+- extendedWaitUntil:
+    visible:
+      id: "discover-btn"
     timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 3. Discover services and dismiss the alert
+# 3. Discover services
 # ---------------------------------------------------------------------------
 - tapOn:
     id: "discover-btn"
 
-- assertVisible:
-    text: "Discovery"
-    timeout: 8000
-- tapOn:
-    text: "OK"
+- extendedWaitUntil:
+    visible:
+      id: "service-test"
+    timeout: 10000
 
 # ---------------------------------------------------------------------------
-# 4. Navigate to the Write Echo characteristic (fff2)
+# 4. Navigate to the Write Echo characteristic
 # ---------------------------------------------------------------------------
 - tapOn:
-    id: "char-fff2"
+    id: "char-write-echo"
 
-- assertVisible:
-    id: "write-input"
+- extendedWaitUntil:
+    visible:
+      id: "write-input"
     timeout: 5000
 
 # ---------------------------------------------------------------------------
@@ -78,15 +87,16 @@ appId: com.bleplxexample
 # ---------------------------------------------------------------------------
 - tapOn:
     id: "write-input"
-- clearText
+- eraseText: 50
 - inputText: "SGVsbG8="
 
 - tapOn:
     id: "write-btn"
 
 # Dismiss the "Value written successfully" alert
-- assertVisible:
-    text: "Write"
+- extendedWaitUntil:
+    visible:
+      text: "Value written successfully"
     timeout: 5000
 - tapOn:
     text: "OK"
@@ -98,8 +108,9 @@ appId: com.bleplxexample
     id: "read-btn"
 
 # The value-display should now show the echoed base64 value
-- assertVisible:
-    id: "value-display"
+- extendedWaitUntil:
+    visible:
+      id: "value-display"
     timeout: 5000
 - assertVisible:
     text: "SGVsbG8="
@@ -109,13 +120,15 @@ appId: com.bleplxexample
 # ---------------------------------------------------------------------------
 - back
 
-- assertVisible:
-    id: "disconnect-btn"
+- extendedWaitUntil:
+    visible:
+      id: "disconnect-btn"
     timeout: 5000
 
 - tapOn:
     id: "disconnect-btn"
 
-- assertVisible:
-    id: "scan-start-btn"
+- extendedWaitUntil:
+    visible:
+      id: "scan-start-btn"
     timeout: 8000
