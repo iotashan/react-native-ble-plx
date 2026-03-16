@@ -1,18 +1,47 @@
 // __tests__/BleManager.test.ts
 
 // ---------------------------------------------------------------------------
+// Type imports for mock handler signatures
+// ---------------------------------------------------------------------------
+import type {
+  ScanResult,
+  ConnectionStateEvent,
+  CharacteristicValueEvent,
+  RestoreStateEvent,
+  BondStateEvent,
+  ConnectionEvent
+} from '../src/BleManager'
+
+// ---------------------------------------------------------------------------
+// Native event payload types used only by L2CAP handlers
+// ---------------------------------------------------------------------------
+interface L2CAPDataEvent {
+  readonly channelId: number
+  readonly data: string
+}
+
+interface L2CAPCloseEvent {
+  readonly channelId: number
+  readonly error: string | null
+}
+
+interface StateChangeEvent {
+  readonly state: string
+}
+
+// ---------------------------------------------------------------------------
 // Mock setup — must happen before any imports that pull in react-native
 // ---------------------------------------------------------------------------
 
-let scanResultHandlers: Array<(result: any) => void> = []
-let connectionStateHandlers: Array<(event: any) => void> = []
-let charValueHandlers: Array<(event: any) => void> = []
-let stateChangeHandler: ((event: any) => void) | null = null
-let restoreStateHandler: ((event: any) => void) | null = null
-let bondStateChangeHandler: ((event: any) => void) | null = null
-let connectionEventHandler: ((event: any) => void) | null = null
-let l2capDataHandler: ((event: any) => void) | null = null
-let l2capCloseHandler: ((event: any) => void) | null = null
+let scanResultHandlers: Array<(result: ScanResult) => void> = []
+let connectionStateHandlers: Array<(event: ConnectionStateEvent) => void> = []
+let charValueHandlers: Array<(event: CharacteristicValueEvent) => void> = []
+let stateChangeHandler: ((event: StateChangeEvent) => void) | null = null
+let restoreStateHandler: ((event: RestoreStateEvent) => void) | null = null
+let bondStateChangeHandler: ((event: BondStateEvent) => void) | null = null
+let connectionEventHandler: ((event: ConnectionEvent) => void) | null = null
+let l2capDataHandler: ((event: L2CAPDataEvent) => void) | null = null
+let l2capCloseHandler: ((event: L2CAPCloseEvent) => void) | null = null
 
 // Convenience aliases for single-handler tests
 const getScanResultHandler = () => scanResultHandlers[scanResultHandlers.length - 1] ?? null
@@ -239,7 +268,7 @@ describe('BleManager', () => {
   // -------------------------------------------------------------------------
 
   test('startDeviceScan calls native and routes scan results immediately with batchInterval 0', async () => {
-    const received: any[] = []
+    const received: ScanResult[] = []
     manager.startDeviceScan(null, null, (_err, device) => {
       if (device) received.push(device)
     })
@@ -260,7 +289,7 @@ describe('BleManager', () => {
   // -------------------------------------------------------------------------
 
   test('stopDeviceScan cleans up batcher and subscription', async () => {
-    const received: any[] = []
+    const received: ScanResult[] = []
     manager.startDeviceScan(null, null, (_err, device) => {
       if (device) received.push(device)
     })
@@ -282,7 +311,7 @@ describe('BleManager', () => {
   test('dispose discards buffered events instead of flushing', async () => {
     // Use a batched manager (non-zero interval) to test discard behavior
     const batchedManager = new BleManager({ scanBatchIntervalMs: 5000 })
-    const received: any[] = []
+    const received: ScanResult[] = []
     batchedManager.startDeviceScan(null, null, (_err, device) => {
       if (device) received.push(device)
     })
@@ -305,7 +334,7 @@ describe('BleManager', () => {
   test('monitorCharacteristicForDevice routes filtered events', async () => {
     await manager.createClient()
 
-    const received: any[] = []
+    const received: CharacteristicValueEvent[] = []
     const sub = manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char', (_err, event) => {
       if (event) received.push(event)
     })
@@ -313,7 +342,9 @@ describe('BleManager', () => {
     expect(mockNativeModule.monitorCharacteristic).toHaveBeenCalled()
     expect(mockNativeModule.onCharacteristicValueUpdate).toHaveBeenCalled()
 
-    const txId = (mockNativeModule.monitorCharacteristic.mock.calls[0] as any[])[4]
+    const txId = (
+      mockNativeModule.monitorCharacteristic.mock.calls[0] as [string, string, string, string | null, string | null]
+    )[4]
     expect(txId).toMatch(/^__ble_tx_\d+$/)
 
     const charValueHandler = charValueHandlers[charValueHandlers.length - 1]!
@@ -340,7 +371,9 @@ describe('BleManager', () => {
 
     const sub = manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char', jest.fn())
 
-    const txId = (mockNativeModule.monitorCharacteristic.mock.calls[0] as any[])[4]
+    const txId = (
+      mockNativeModule.monitorCharacteristic.mock.calls[0] as [string, string, string, string | null, string | null]
+    )[4]
 
     sub.remove()
 
@@ -422,12 +455,12 @@ describe('BleManager', () => {
     })
 
     expect(callback).toHaveBeenCalledTimes(1)
-    const [err, device] = callback.mock.calls[0] as [BleError, any]
+    const [err, device] = callback.mock.calls[0] as [BleError | null, ConnectionStateEvent | null]
     expect(err).toBeInstanceOf(BleError)
-    expect(err.code).toBe(2)
-    expect(err.message).toBe('Connection failed')
+    expect(err!.code).toBe(2)
+    expect(err!.message).toBe('Connection failed')
     // Platform should come from Platform.OS, not hardcoded
-    expect(err.platform).toBe('ios')
+    expect(err!.platform).toBe('ios')
     expect(device).not.toBeNull()
   })
 
@@ -501,7 +534,13 @@ describe('BleManager', () => {
     manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char1', jest.fn())
     manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char2', jest.fn())
 
-    const calls = mockNativeModule.monitorCharacteristic.mock.calls as any[][]
+    const calls = mockNativeModule.monitorCharacteristic.mock.calls as [
+      string,
+      string,
+      string,
+      string | null,
+      string | null
+    ][]
     const txId1 = calls[0][4] as string
     const txId2 = calls[1][4] as string
 
@@ -533,8 +572,12 @@ describe('BleManager', () => {
     const sub1 = manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char1', jest.fn())
     const sub2 = manager.monitorCharacteristicForDevice('AA:BB', 'svc', 'char2', jest.fn())
 
-    const txId1 = (mockNativeModule.monitorCharacteristic.mock.calls[0] as any[])[4]
-    const txId2 = (mockNativeModule.monitorCharacteristic.mock.calls[1] as any[])[4]
+    const txId1 = (
+      mockNativeModule.monitorCharacteristic.mock.calls[0] as [string, string, string, string | null, string | null]
+    )[4]
+    const txId2 = (
+      mockNativeModule.monitorCharacteristic.mock.calls[1] as [string, string, string, string | null, string | null]
+    )[4]
 
     // Also start a scan
     manager.startDeviceScan(null, null, jest.fn())
@@ -597,7 +640,13 @@ describe('BleManager', () => {
       subscriptionType: 'indicate'
     })
 
-    const call = mockNativeModule.monitorCharacteristic.mock.calls[0] as any[]
+    const call = mockNativeModule.monitorCharacteristic.mock.calls[0] as [
+      string,
+      string,
+      string,
+      string | null,
+      string | null
+    ]
     expect(call[3]).toBe('indicate')
   })
 
